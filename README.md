@@ -14,6 +14,8 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
 - Fans, Wi-Fi signal, nozzle type, SD card and firmware versions
 - HMS alerts and print errors
 - Live camera: the printer's own camera plus any USB webcam or IP camera, with a camera picker
+- Projects: upload STL/3MF files, set how many of each part you need and track what's printed,
+  with a 3D preview and automatic counting of finished prints
 - Password login (set on first visit) and a Settings page
 - Print history, saved to `data/print-history.json`
 - All raw printer data
@@ -38,6 +40,22 @@ Forgot the password? Delete `data/auth.json` on the server; the next visit asks 
 
 The password is stored as a scrypt hash. Sessions are signed, HttpOnly cookies. After 5 wrong
 attempts, logging in is paused (30 seconds, doubling up to 15 minutes).
+
+## Projects
+Under **Projects** you group the parts of something you're building:
+
+- **Upload** STL, 3MF, OBJ, STEP or G-code files (up to 300 MB each). Each file becomes a part;
+  you can also add parts without a file.
+- Per part: **pieces needed**, **printed** (−/+ buttons) and **failed**, plus optional material,
+  colour, minutes and grams per piece. The project shows overall progress and, when filled in,
+  the print time and filament still needed.
+- **3D view** of STL files right in the browser.
+- **Automatic counting:** when a print finishes, its name is compared with each part's file name
+  (or a "print name to match" you set). A unique match adds the part's *pieces per print* to
+  *printed*, or to *failed* when the print failed. Only projects with status *Active* count.
+  The print history on the dashboard shows where each print was counted.
+
+Files are stored in `data/projects/` (the `bambu-data` volume in Docker).
 
 ## Cameras
 - **Printer camera (A1, A1 mini, P1P, P1S):** on the printer, turn on **LAN Only Liveview** in the
@@ -109,13 +127,17 @@ app/
   api/cameras/           camera list for the dropdown
   api/auth/              login, first-run setup, logout, password change
   api/settings/          settings (cameras) and camera URL test
+  api/projects/          projects and parts (JSON), model file downloads
+  api/upload/            streaming model upload (not behind proxy.ts, see the note there)
   login/, settings/      login and settings pages
+  projects/              project list and project pages
 components/              the dashboard cards, login form, settings view
 hooks/usePrinter.ts      live data in the browser
 lib/printer.ts           MQTT connection to the printer (server only)
 lib/cameras.ts           camera sources: printer camera, MJPEG/snapshot URLs
 lib/auth.ts              password hashing and signed session cookies
 lib/settings.ts          settings stored in data/settings.json
+lib/projects.ts          projects, parts, file storage and automatic counting
 lib/types.ts, format.ts  shared types and labels
 proxy.ts                 requires a login for every page and API route
 instrumentation.ts       connects to the printer when the server starts

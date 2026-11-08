@@ -101,6 +101,14 @@ export function requireSession(req: Request): Response | null {
   return isLoggedIn(req) ? null : Response.json({ ok: false, error: 'Not logged in' }, { status: 401 });
 }
 
+/** CSRF check: a state-changing request must come from the dashboard's own origin. */
+export function isSameOrigin(req: Request) {
+  if (req.method === 'GET' || req.method === 'HEAD') return true;
+  const origin = req.headers.get('origin');
+  if (!origin) return true; // non-browser clients (curl); browsers always send Origin on POST/PUT/PATCH/DELETE
+  try { return new URL(origin).host === req.headers.get('host'); } catch { return false; }
+}
+
 /** Set-Cookie header value. `Secure` only when the dashboard is served over HTTPS. */
 export function sessionCookie(req: Request, token: string | null) {
   const https = new URL(req.url).protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';

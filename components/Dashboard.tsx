@@ -6,6 +6,7 @@ import JobCard from './JobCard';
 import CameraCard from './CameraCard';
 import TempCard from './TempCard';
 import AmsCard from './AmsCard';
+import ProjectsCard from './ProjectsCard';
 import { FansCard, AlertsCard, SystemCard, HistoryCard } from './InfoCards';
 import type { Connection } from '@/lib/types';
 
@@ -53,6 +54,7 @@ export default function Dashboard() {
         <FansCard s={state} />
         <AlertsCard s={state} />
         <SystemCard s={state} model={printer?.model} />
+        <ProjectsCard refreshKey={printHistory[0]?.ended ?? 0} />
         <HistoryCard jobs={printHistory} />
         <section className="card s12">
           <details>

@@ -77,6 +77,54 @@ export type PrintJob = {
   layers: number | null;
   started: number | null;
   ended: number;
+  /** Set when the print was counted towards a project part automatically. */
+  counted?: { projectId: string; projectName: string; partId: string; partName: string; pieces: number };
+};
+
+// ---------------------------------------------------------------- projects
+
+export type FileKind = 'stl' | '3mf' | 'obj' | 'step' | 'gcode';
+
+export type Part = {
+  id: string;
+  name: string;
+  file?: { name: string; size: number; kind: FileKind; uploadedAt: number };
+  quantity: number; // pieces needed
+  printed: number; // good pieces
+  failed: number; // failed pieces (not counted towards printed)
+  perPlate: number; // pieces per print, used when counting automatically
+  material?: string;
+  color?: string; // #rrggbb
+  minutesPerPiece?: number;
+  gramsPerPiece?: number;
+  matchName?: string; // print name to match for automatic counting (defaults to the file name)
+  notes?: string;
+  createdAt: number;
+};
+
+export type ProjectStatus = 'planning' | 'active' | 'paused' | 'done';
+
+export type Activity = { t: number; text: string };
+
+export type Project = {
+  id: string;
+  name: string;
+  description?: string;
+  status: ProjectStatus;
+  autoCount: boolean;
+  createdAt: number;
+  updatedAt: number;
+  parts: Part[];
+  activity: Activity[];
+};
+
+export type ProjectSummary = Omit<Project, 'parts' | 'activity'> & {
+  partCount: number;
+  needed: number;
+  printed: number;
+  failed: number;
+  remainingMinutes: number | null;
+  remainingGrams: number | null;
 };
 
 export type Snapshot = {

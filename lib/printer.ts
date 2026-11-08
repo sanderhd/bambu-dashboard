@@ -112,13 +112,16 @@ class Printer extends EventEmitter {
     const done = gs === 'FINISH' || gs === 'FAILED';
     const wasActive = prev && !['FINISH', 'FAILED', 'IDLE'].includes(prev);
     if (done && wasActive) {
-      this.printHistory.unshift({
+      const job: PrintJob = {
         name: this.state.subtask_name || this.state.gcode_file || 'Unknown',
         result: gs as 'FINISH' | 'FAILED',
         layers: this.state.total_layer_num ?? null,
         started: this.jobStartedAt,
         ended: Date.now(),
-      });
+      };
+      // Listeners (project counting) may annotate the job before it is saved.
+      this.emit('jobFinished', job);
+      this.printHistory.unshift(job);
       this.printHistory = this.printHistory.slice(0, 100);
       fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
       fs.writeFile(HISTORY_PATH, JSON.stringify(this.printHistory, null, 2), () => {});

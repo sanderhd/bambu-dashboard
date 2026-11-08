@@ -1,10 +1,18 @@
 'use client';
 import Link from 'next/link';
 
+export type Page = 'dashboard' | 'projects' | 'settings';
+
+const LINKS: [Page, string, string][] = [
+  ['dashboard', '/', 'Dashboard'],
+  ['projects', '/projects', 'Projects'],
+  ['settings', '/settings', 'Settings'],
+];
+
 export default function Header({ title, subtitle, active, children }: {
   title: string;
   subtitle?: string;
-  active: 'dashboard' | 'settings';
+  active: Page;
   children?: React.ReactNode;
 }) {
   const logout = async () => {
@@ -18,8 +26,9 @@ export default function Header({ title, subtitle, active, children }: {
       {children}
       <span className="spacer" />
       <nav className="nav">
-        <Link href="/" className={active === 'dashboard' ? 'on' : ''}>Dashboard</Link>
-        <Link href="/settings" className={active === 'settings' ? 'on' : ''}>Settings</Link>
+        {LINKS.map(([key, href, label]) => (
+          <Link key={key} href={href} className={active === key ? 'on' : ''}>{label}</Link>
+        ))}
         <button className="linklike" onClick={logout}>Log out</button>
       </nav>
     </header>

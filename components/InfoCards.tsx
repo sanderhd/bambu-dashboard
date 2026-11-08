@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import type { PrintJob, PrintState } from '@/lib/types';
 import { fanPct, fmtDur, hmsCode } from '@/lib/format';
 
@@ -88,6 +89,11 @@ export function HistoryCard({ jobs }: { jobs: PrintJob[] }) {
               <span>
                 <b>{h.name}</b><br />
                 <span className="muted">{new Date(h.ended).toLocaleString()}{dur && ` · ${dur}`}</span>
+                {h.counted && (
+                  <><br /><Link className="muted small" href={`/projects/${h.counted.projectId}`}>
+                    Counted: {h.counted.projectName} → {h.counted.partName} ({ok ? '+' : '✗ '}{h.counted.pieces})
+                  </Link></>
+                )}
               </span>
               <span style={{ color: ok ? 'var(--accent)' : 'var(--bad)', fontWeight: 600 }}>{ok ? 'Succeeded' : 'Failed'}</span>
             </li>
