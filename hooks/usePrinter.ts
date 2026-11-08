@@ -34,13 +34,21 @@ export function usePrinter() {
       }
     });
     es.addEventListener('history', (e) => setPrintHistory(JSON.parse((e as MessageEvent).data)));
-    es.onerror = () => setServerDown(true);
+    es.onerror = async () => {
+      // EventSource hides the status code: ask whether the session expired.
+      try {
+        const r = await fetch('/api/auth/session');
+        if (r.status === 401) { window.location.href = '/login'; return; }
+      } catch { /* server down */ }
+      setServerDown(true);
+    };
     return () => es.close();
   }, []);
 
   const command = useCallback(async (action: string, value?: unknown) => {
     try {
       const r = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, value }) });
+      if (r.status === 401) { window.location.href = '/login'; return 'Not logged in'; }
       const j = await r.json();
       return j.ok ? 'Command sent' : `Failed: ${j.error}`;
     } catch {

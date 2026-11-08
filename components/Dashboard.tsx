@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { usePrinter } from '@/hooks/usePrinter';
+import Header from './Header';
 import JobCard from './JobCard';
 import CameraCard from './CameraCard';
 import TempCard from './TempCard';
@@ -17,7 +18,7 @@ const CONN: Record<Connection['status'], [string, string]> = {
 };
 
 export default function Dashboard() {
-  const { state, connection, tempHistory, printHistory, printer, demo, serverDown, command } = usePrinter();
+  const { state, connection, tempHistory, printHistory, printer, serverDown, command } = usePrinter();
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,17 +36,18 @@ export default function Dashboard() {
 
   return (
     <>
-      <header>
-        <h1>{printer?.name ?? 'Bambu Dashboard'}</h1>
-        {printer && printer.name !== printer.model && <span className="muted">{printer.model}</span>}
+      <Header
+        title={printer?.name ?? 'Bambu Dashboard'}
+        subtitle={printer && printer.name !== printer.model ? printer.model : undefined}
+        active="dashboard"
+      >
         <span className="badge"><span className={`dot ${cls}`} />{text}</span>
         <span className="badge" title="Wi-Fi signal">📶 {state.wifi_signal || '–'}</span>
-        <span className="spacer" />
         <button className="btn" onClick={() => send('refresh')}>Refresh status</button>
-      </header>
+      </Header>
       <main>
         <JobCard s={state} send={send} />
-        <CameraCard available={!demo && printer?.camera !== 'off'} />
+        <CameraCard />
         <TempCard s={state} history={tempHistory} />
         <AmsCard s={state} />
         <FansCard s={state} />

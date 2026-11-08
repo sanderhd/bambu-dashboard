@@ -1,11 +1,10 @@
-// Server-only: a single connection to the printer (MQTT + camera), shared by all API routes.
+// Server-only: a single MQTT connection to the printer, shared by all API routes.
 // Runs in the Next.js Node.js runtime; works with `next dev` and `next start` (not serverless).
+// Cameras live in lib/cameras.ts.
 import 'server-only';
 import { EventEmitter } from 'events';
-import { spawn, spawnSync, type ChildProcess } from 'child_process';
 import fs from 'fs';
 import path from 'path';
-import tls from 'tls';
 import mqtt, { MqttClient } from 'mqtt';
 import type { CameraMode, Connection, PrintState, PrintJob, PrinterInfo, TempSample, Snapshot } from './types';
 
@@ -14,15 +13,15 @@ const CONFIG_PATH = path.join(ROOT, 'config.json');
 const HISTORY_PATH = path.join(ROOT, 'data', 'print-history.json');
 const TEMP_HISTORY_MAX = (60 * 60) / 5; // 1 hour at one sample every 5 s
 
-type Config = { printerIp: string; serial: string; accessCode: string; name?: string; camera?: CameraMode | 'auto' };
+export type Config = { printerIp: string; serial: string; accessCode: string; name?: string; camera?: CameraMode | 'auto' };
 
 function loadConfig(): Config | null {
   if (process.env.BAMBU_DEMO === '1') return null;
   const env = process.env;
   if (env.BAMBU_IP && env.BAMBU_SERIAL && env.BAMBU_ACCESS_CODE) {
     return {
-      printerIp: env.BAMBU_IP, serial: env.BAMBU_SERIAL, accessCode: env.BAMBU_ACCESS_CODE,
-      name: env.BAMBU_NAME, camera: env.BAMBU_CAMERA as Config['camera'],
+      printerIp: env.BAMBU_IP.trim(), serial: env.BAMBU_SERIAL.trim(), accessCode: env.BAMBU_ACCESS_CODE.trim(),
+      name: env.BAMBU_NAME?.trim(), camera: env.BAMBU_CAMERA?.trim() as Config['camera'],
     };
   }
   if (!fs.existsSync(CONFIG_PATH)) return null;
@@ -189,104 +188,6 @@ class Printer extends EventEmitter {
     }
   }
 
-  // ------------------------------------------------------------ camera
-  // A1/P1: JPEG frames over TLS on port 6000.
-  // X1/H2: RTSPS on port 322, converted to JPEG frames with ffmpeg (must be installed).
-  private camSource: { stop(): void } | null = null;
-  private camViewers = 0;
-  lastFrame: Buffer | null = null;
-
-  /** Why the camera can't be used, or null when it can. */
-  cameraUnavailableReason(): string | null {
-    if (this.demo) return 'No camera in demo mode';
-    if (this.info.camera === 'off') return 'Camera is turned off in the configuration';
-    if (this.info.camera === 'rtsp' && !hasFfmpeg()) return `The ${this.info.model} camera needs ffmpeg. Install it and make sure it is on your PATH.`;
-    return null;
-  }
-
-  /** Register a viewer; returns an unsubscribe function. */
-  watchCamera(onFrame: (jpg: Buffer) => void) {
-    const reason = this.cameraUnavailableReason();
-    if (reason) throw new Error(reason);
-    this.on('frame', onFrame);
-    this.camViewers++;
-    this.startCamera();
-    return () => {
-      this.off('frame', onFrame);
-      this.camViewers--;
-      setTimeout(() => { if (this.camViewers <= 0 && this.camSource) { this.camSource.stop(); this.camSource = null; } }, 2000);
-    };
-  }
-
-  private frame(jpg: Buffer) {
-    this.lastFrame = jpg;
-    this.emit('frame', jpg);
-  }
-
-  private startCamera() {
-    if (this.camSource) return;
-    const onClosed = () => {
-      this.camSource = null;
-      if (this.camViewers > 0) setTimeout(() => this.startCamera(), 3000);
-    };
-    this.camSource = this.info.camera === 'rtsp' ? this.startRtspCamera(onClosed) : this.startJpegCamera(onClosed);
-  }
-
-  private startJpegCamera(onClosed: () => void) {
-    const { printerIp, accessCode } = this.config!;
-    const auth = Buffer.alloc(80);
-    auth.writeUInt32LE(0x40, 0);
-    auth.writeUInt32LE(0x3000, 4);
-    auth.write('bblp', 16, 'ascii');
-    auth.write(accessCode, 48, 'ascii');
-
-    let buf = Buffer.alloc(0);
-    let stopped = false;
-    const sock: tls.TLSSocket = tls.connect({ host: printerIp, port: 6000, rejectUnauthorized: false }, () => sock.write(auth));
-    sock.on('data', (chunk: Buffer) => {
-      buf = Buffer.concat([buf, chunk]);
-      while (buf.length >= 16) {
-        const size = buf.readUInt32LE(0);
-        if (size <= 0 || size > 5_000_000) { buf = Buffer.alloc(0); break; }
-        if (buf.length < 16 + size) break;
-        const jpg = Buffer.from(buf.subarray(16, 16 + size));
-        buf = buf.subarray(16 + size);
-        if (jpg[0] === 0xff && jpg[1] === 0xd8) this.frame(jpg);
-      }
-    });
-    sock.on('error', (e) => console.warn('[camera]', e.message));
-    sock.on('close', () => { if (!stopped) onClosed(); });
-    return { stop: () => { stopped = true; sock.destroy(); } };
-  }
-
-  private startRtspCamera(onClosed: () => void) {
-    const { printerIp, accessCode } = this.config!;
-    const url = `rtsps://bblp:${encodeURIComponent(accessCode)}@${printerIp}:322/streaming/live/1`;
-    let stopped = false;
-    const ff: ChildProcess = spawn('ffmpeg', [
-      '-hide_banner', '-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', url,
-      '-an', '-f', 'mjpeg', '-q:v', '5', '-r', '10', 'pipe:1',
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
-
-    let buf = Buffer.alloc(0);
-    ff.stdout!.on('data', (chunk: Buffer) => {
-      buf = Buffer.concat([buf, chunk]);
-      for (;;) {
-        const start = buf.indexOf(Buffer.from([0xff, 0xd8]));
-        if (start < 0) { buf = Buffer.alloc(0); break; }
-        const end = buf.indexOf(Buffer.from([0xff, 0xd9]), start + 2);
-        if (end < 0) { buf = buf.subarray(start); break; }
-        this.frame(Buffer.from(buf.subarray(start, end + 2)));
-        buf = buf.subarray(end + 2);
-      }
-      if (buf.length > 10_000_000) buf = Buffer.alloc(0);
-    });
-    ff.stderr!.on('data', (d) => console.warn('[camera/ffmpeg]', String(d).trim().replaceAll(accessCode, '***')));
-    ff.on('error', (e) => console.warn('[camera/ffmpeg]', e.message));
-    ff.on('close', () => { if (!stopped) onClosed(); });
-    return { stop: () => { stopped = true; ff.kill(); } };
-  }
-
   // ------------------------------------------------------------ demo mode
   private d = { gs: 'RUNNING', pct: 37, layer: 84, spd: 2, light: 'on', nozzle: 25, bed: 22 };
 
@@ -334,14 +235,6 @@ class Printer extends EventEmitter {
     tick();
     setInterval(tick, 2000);
   }
-}
-
-let ffmpegChecked: boolean | undefined;
-function hasFfmpeg() {
-  if (ffmpegChecked === undefined) {
-    ffmpegChecked = spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
-  }
-  return ffmpegChecked;
 }
 
 // One instance per process, even when Next.js reloads modules (hot reload in dev).

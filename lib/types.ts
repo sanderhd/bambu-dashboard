@@ -61,6 +61,14 @@ export type CameraMode = 'jpeg' | 'rtsp' | 'off';
 
 export type PrinterInfo = { model: string; name: string; camera: CameraMode };
 
+/** A camera the user added in Settings: an HTTP MJPEG stream or JPEG snapshot URL. */
+export type CameraConfig = { id: string; name: string; type: 'mjpeg'; url: string };
+
+/** A camera as shown in the camera dropdown. `printer` is the printer's built-in camera. */
+export type CameraInfo = { id: string; name: string; type: 'printer' | 'mjpeg' };
+
+export type Settings = { cameras: CameraConfig[]; defaultCamera?: string };
+
 export type TempSample = { t: number; nozzle: number; nozzleTarget: number; bed: number; bedTarget: number };
 
 export type PrintJob = {

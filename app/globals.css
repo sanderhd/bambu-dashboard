@@ -79,5 +79,44 @@ main { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; padding
 .ok-msg { color: var(--accent); font-weight: 550; }
 pre { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-height: 420px; overflow: auto; font-size: 12px; }
 details summary { cursor: pointer; color: var(--muted); font-weight: 600; }
+.bad-msg { color: var(--bad); font-weight: 550; }
+.small { font-size: 12px; }
+code, .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; }
+code { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 0 4px; }
+
+/* navigation */
+.nav { display: flex; align-items: center; gap: 4px; }
+.nav a, .linklike { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 8px; font: inherit; font-weight: 550; background: none; border: 0; cursor: pointer; }
+.nav a:hover, .linklike:hover { color: var(--ink); background: var(--card); }
+.nav a.on { color: var(--ink); background: var(--card); border: 1px solid var(--line); }
+
+/* forms */
+input, select { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; min-width: 0; }
+input:focus, select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; border-color: var(--accent); }
+.field { display: grid; gap: 5px; margin-bottom: 12px; }
+.field span { font-size: 13px; color: var(--muted); }
+.radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); cursor: pointer; }
+.btn.wide { width: 100%; padding: 10px; }
+.cam-row { align-items: center; flex-wrap: wrap; }
+.cam-fields { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; gap: 8px; flex: 1; min-width: 240px; }
+.cam-fields > span { grid-column: 1 / -1; font-size: 13px; }
+.cam-add { display: grid; grid-template-columns: minmax(120px, 200px) 1fr auto auto; gap: 8px; margin-bottom: 6px; }
+@media (max-width: 700px) { .cam-fields, .cam-add { grid-template-columns: 1fr; } }
+
+/* login */
+.auth-wrap { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.auth { width: 100%; max-width: 380px; }
+.auth h1 { font-size: 20px; margin: 0 0 6px; }
+.auth p { margin: 0 0 16px; }
+.auth .alert { margin: 4px 0 12px; }
+.auth .small { margin: 14px 0 0; }
+
+/* camera states */
+.cam { position: relative; }
+.cam-idle { text-align: center; padding: 16px; color: #c9cdd1; }
+.cam-idle a { color: #fff; }
+.cam-error { margin: 0 auto 12px; max-width: 420px; color: #ffb4a8; }
+.cam-overlay { position: absolute; left: 10px; right: 10px; bottom: 10px; background: rgba(0,0,0,.72); color: #ffb4a8; padding: 8px 10px; border-radius: 8px; font-size: 13px; }
+
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }

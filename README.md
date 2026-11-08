@@ -13,7 +13,8 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
   multiple AMS units (A1–D4), humidity and temperature for a full AMS, and the external spool
 - Fans, Wi-Fi signal, nozzle type, SD card and firmware versions
 - HMS alerts and print errors
-- Live camera
+- Live camera: the printer's own camera plus any USB webcam or IP camera, with a camera picker
+- Password login (set on first visit) and a Settings page
 - Print history, saved to `data/print-history.json`
 - All raw printer data
 - Controls: pause, resume, stop, light on/off and print speed
@@ -29,6 +30,27 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
    PATH. These printers stream video over RTSP, which browsers can't play directly.
 
 Tip: give the printer a fixed IP address in your router so the configuration stays valid.
+
+## Login
+On the first visit you choose a password. After that every page and API call requires a login
+(sessions last 30 days). Change the password or log out every device under **Settings**.
+Forgot the password? Delete `data/auth.json` on the server; the next visit asks for a new one.
+
+The password is stored as a scrypt hash. Sessions are signed, HttpOnly cookies. After 5 wrong
+attempts, logging in is paused (30 seconds, doubling up to 15 minutes).
+
+## Cameras
+- **Printer camera (A1, A1 mini, P1P, P1S):** on the printer, turn on **LAN Only Liveview** in the
+  network settings. Without it the printer doesn't open its camera port (6000) and the dashboard
+  shows that as an error.
+- **Printer camera (X1, H2):** needs ffmpeg, see Setup.
+- **USB webcam or IP camera:** add it under **Settings → Cameras** with a URL that serves an MJPEG
+  stream or a JPEG snapshot, e.g. from picam, mjpg-streamer, ustreamer or motionEye
+  (`http://<pi-ip>:8080/stream.mjpg`). Use **Test** to check it. The dashboard fetches the stream on
+  the server, so camera URLs are never exposed to the browser.
+
+Pick the camera with the dropdown on the dashboard. Your choice is remembered per browser; the
+default for new browsers is set in Settings.
 
 ## Running
 | Command                     | What it does                                       |
@@ -50,7 +72,6 @@ The image is built and run entirely on the Docker host. It works on a Raspberry 
    sudo usermod -aG docker $USER   # then log out and back in
    docker compose version          # check that Compose is available
    ```
-   Note: Docker Engine 28 is the last major version that supports 32-bit Raspberry Pi OS.
 2. **Make sure the Pi has swap** (at least 1 GB); the build needs it on a 1 GB Pi. Check with `free -h`.
 3. **Copy the project to the Pi**, without `node_modules` and `.next`. From this folder on your PC:
    ```sh
@@ -82,11 +103,19 @@ app/
   page.tsx               dashboard page
   api/events/route.ts    live state (Server-Sent Events)
   api/command/route.ts   controls (only a fixed set of allowed actions)
-  api/camera/route.ts    camera as an MJPEG stream
-components/              the dashboard cards
+  api/camera/[id]/       camera as an MJPEG stream (+ /status)
+  api/cameras/           camera list for the dropdown
+  api/auth/              login, first-run setup, logout, password change
+  api/settings/          settings (cameras) and camera URL test
+  login/, settings/      login and settings pages
+components/              the dashboard cards, login form, settings view
 hooks/usePrinter.ts      live data in the browser
-lib/printer.ts           MQTT and camera connection to the printer (server only)
+lib/printer.ts           MQTT connection to the printer (server only)
+lib/cameras.ts           camera sources: printer camera, MJPEG/snapshot URLs
+lib/auth.ts              password hashing and signed session cookies
+lib/settings.ts          settings stored in data/settings.json
 lib/types.ts, format.ts  shared types and labels
+proxy.ts                 requires a login for every page and API route
 instrumentation.ts       connects to the printer when the server starts
 ```
 

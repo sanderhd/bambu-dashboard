@@ -1,9 +1,12 @@
+import { requireSession } from '@/lib/auth';
 import { getPrinter } from '@/lib/printer';
 
 export const dynamic = 'force-dynamic';
 
 // Server-Sent Events: a full snapshot first, then every update.
 export async function GET(req: Request) {
+  const denied = requireSession(req);
+  if (denied) return denied;
   const printer = getPrinter();
   const enc = new TextEncoder();
   let cleanup = () => {};
