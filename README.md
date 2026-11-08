@@ -89,7 +89,9 @@ The image is built and run entirely on the Docker host. It works on a Raspberry 
 5. Open `http://raspberrypi.local:3000` (or the Pi's IP address).
 
 **Updating:** copy the project again (step 3), then run `docker compose up -d --build`.
-Print history lives in `~/bambu-dashboard/data` and survives rebuilds.
+The password, settings and print history live in the `bambu-data` Docker volume and survive rebuilds.
+
+**Forgot the password (Docker):** `docker compose exec bambu-dashboard rm /app/data/auth.json`
 
 **X1 / H2 printers:** set `INSTALL_FFMPEG: "true"` in `docker-compose.yml` for the camera. Converting
 the RTSP stream is heavy work for a Pi 2B, so expect a low frame rate.

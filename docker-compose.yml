@@ -12,4 +12,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/app/data # print history survives updates and rebuilds
+      # Password, settings and print history. A named volume (not a host folder) so it is
+      # owned by the container's user and survives updates and rebuilds.
+      - bambu-data:/app/data
+
+volumes:
+  bambu-data:
