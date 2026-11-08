@@ -1,0 +1,15 @@
+services:
+  bambu-dashboard:
+    build:
+      context: .
+      args:
+        # Set to "true" for X1 / H2 printers (their camera needs ffmpeg).
+        INSTALL_FFMPEG: "false"
+    image: bambu-dashboard
+    container_name: bambu-dashboard
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data # print history survives updates and rebuilds

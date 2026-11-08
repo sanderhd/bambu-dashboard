@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+data
+deploy
+*.tar.gz
+*.tsbuildinfo
+next-env.d.ts
+# secrets: passed in at runtime via env_file, never baked into the image
+.env
+.env*.local
+config.json

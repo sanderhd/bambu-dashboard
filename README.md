@@ -40,6 +40,42 @@ Tip: give the printer a fixed IP address in your router so the configuration sta
 Then open http://localhost:3000, or `http://<your-computer's-ip>:3000` from your phone.
 Without a `.env` or `config.json` the dashboard starts in demo mode.
 
+## Running with Docker (e.g. on a Raspberry Pi)
+The image is built and run entirely on the Docker host. It works on a Raspberry Pi 2B
+(32-bit ARM, 1 GB RAM) as well as on 64-bit Pis and regular PCs.
+
+1. **Install Docker on the Pi** (Raspberry Pi OS):
+   ```sh
+   curl -fsSL https://get.docker.com | sh
+   sudo usermod -aG docker $USER   # then log out and back in
+   docker compose version          # check that Compose is available
+   ```
+   Note: Docker Engine 28 is the last major version that supports 32-bit Raspberry Pi OS.
+2. **Make sure the Pi has swap** (at least 1 GB); the build needs it on a 1 GB Pi. Check with `free -h`.
+3. **Copy the project to the Pi**, without `node_modules` and `.next`. From this folder on your PC:
+   ```sh
+   tar --exclude=node_modules --exclude=.next --exclude=data -czf - . | ssh pi@raspberrypi.local "mkdir -p ~/bambu-dashboard && tar -xzf - -C ~/bambu-dashboard"
+   ```
+   This copies your `.env` too. If you don't have one on the Pi yet: `cp .env.example .env` and edit it.
+4. **Build and start, on the Pi:**
+   ```sh
+   cd ~/bambu-dashboard
+   docker compose up -d --build
+   docker compose logs -f          # follow progress / see the "[bambu] Connecting…" line
+   ```
+   The first build is slow on a Pi 2B: there is no native compiler for 32-bit ARM, so Next.js
+   falls back to a WebAssembly compiler. Later builds reuse the cached dependency layer.
+5. Open `http://raspberrypi.local:3000` (or the Pi's IP address).
+
+**Updating:** copy the project again (step 3), then run `docker compose up -d --build`.
+Print history lives in `~/bambu-dashboard/data` and survives rebuilds.
+
+**X1 / H2 printers:** set `INSTALL_FFMPEG: "true"` in `docker-compose.yml` for the camera. Converting
+the RTSP stream is heavy work for a Pi 2B, so expect a low frame rate.
+
+`.env`, `config.json` and `data/` are excluded from the image (`.dockerignore`); the container reads
+`.env` at runtime through `env_file`.
+
 ## Project structure
 ```
 app/
