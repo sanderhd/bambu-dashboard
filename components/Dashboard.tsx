@@ -7,6 +7,7 @@ import CameraCard from './CameraCard';
 import TempCard from './TempCard';
 import AmsCard from './AmsCard';
 import ProjectsCard from './ProjectsCard';
+import MaintenanceCard from './MaintenanceCard';
 import { FansCard, AlertsCard, SystemCard, HistoryCard } from './InfoCards';
 import type { Connection } from '@/lib/types';
 
@@ -19,7 +20,7 @@ const CONN: Record<Connection['status'], [string, string]> = {
 };
 
 export default function Dashboard() {
-  const { state, connection, tempHistory, printHistory, printer, serverDown, command } = usePrinter();
+  const { state, connection, tempHistory, printHistory, printer, serverDown, power, jobEnergyKwh, command } = usePrinter();
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,10 +45,16 @@ export default function Dashboard() {
       >
         <span className="badge"><span className={`dot ${cls}`} />{text}</span>
         <span className="badge" title="Wi-Fi signal">📶 {state.wifi_signal || '–'}</span>
+        {power && (
+          <span className="badge" title={power.error ?? 'Power use, from Home Assistant'}>
+            ⚡ {power.watts != null ? `${Math.round(power.watts)} W` : 'n/a'}
+          </span>
+        )}
         <button className="btn" onClick={() => send('refresh')}>Refresh status</button>
       </Header>
       <main>
-        <JobCard s={state} send={send} />
+        <MaintenanceCard refreshKey={printHistory[0]?.ended ?? 0} />
+        <JobCard s={state} send={send} energyKwh={jobEnergyKwh} />
         <CameraCard />
         <TempCard s={state} history={tempHistory} />
         <AmsCard s={state} />

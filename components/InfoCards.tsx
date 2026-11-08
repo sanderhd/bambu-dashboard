@@ -88,7 +88,11 @@ export function HistoryCard({ jobs }: { jobs: PrintJob[] }) {
             <li key={h.ended}>
               <span>
                 <b>{h.name}</b><br />
-                <span className="muted">{new Date(h.ended).toLocaleString()}{dur && ` · ${dur}`}</span>
+                <span className="muted">
+                  {new Date(h.ended).toLocaleString()}{dur && ` · ${dur}`}
+                  {h.energyKwh != null && ` · ${h.energyKwh.toFixed(2)} kWh`}
+                  {h.grams != null && ` · ${Math.round(h.grams)} g`}
+                </span>
                 {h.counted && (
                   <><br /><Link className="muted small" href={`/projects/${h.counted.projectId}`}>
                     Counted: {h.counted.projectName} → {h.counted.partName} ({ok ? '+' : '✗ '}{h.counted.pieces})

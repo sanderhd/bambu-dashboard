@@ -5,11 +5,14 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getPrinter } from './printer';
+import { inspect3mf } from './threemf';
 import type { Activity, FileKind, Part, PrintJob, Project, ProjectStatus, ProjectSummary } from './types';
 
 const DIR = path.join(process.cwd(), 'data', 'projects');
 const INDEX = path.join(DIR, 'index.json');
 export const MAX_UPLOAD_BYTES = 300 * 1024 * 1024;
+export const MAX_THUMB_BYTES = 2 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const MAX_ACTIVITY = 100;
 const STATUSES: ProjectStatus[] = ['planning', 'active', 'paused', 'done'];
 const EXT_KIND: Record<string, FileKind> = {
@@ -99,8 +102,10 @@ function summarize(p: Project): ProjectSummary {
     if (part.minutesPerPiece != null) { mins += left * part.minutesPerPiece; minsKnown = true; }
     if (part.gramsPerPiece != null) { grams += left * part.gramsPerPiece; gramsKnown = true; }
   }
+  const coverPart = parts.find((x) => x.thumbnail);
   return {
     ...rest, partCount: parts.length, needed, printed, failed,
+    cover: coverPart ? { partId: coverPart.id, v: coverPart.thumbnail! } : null,
     remainingMinutes: minsKnown ? Math.round(mins) : null,
     remainingGrams: gramsKnown ? Math.round(grams) : null,
   };
@@ -125,6 +130,20 @@ export function getPart(projectId: string, partId: string) {
 export const projectDir = (projectId: string) => path.join(DIR, projectId);
 export const partFilePath = (projectId: string, part: Part) =>
   path.join(projectDir(projectId), `${part.id}${path.extname(part.file?.name ?? '').toLowerCase()}`);
+export const thumbPath = (projectId: string, part: Part) => path.join(projectDir(projectId), `${part.id}.thumb.png`);
+
+/** Stores a preview image for a part (PNG only). Used for STL previews rendered in the browser. */
+export function setThumbnail(projectId: string, partId: string, png: Buffer) {
+  const { project, part } = getPart(projectId, partId);
+  if (png.length > MAX_THUMB_BYTES) throw new UserError('Image is too large', 413);
+  if (!png.subarray(0, 8).equals(PNG_SIGNATURE)) throw new UserError('Not a PNG image');
+  fs.mkdirSync(projectDir(projectId), { recursive: true });
+  fs.writeFileSync(thumbPath(projectId, part), png);
+  part.thumbnail = now();
+  project.updatedAt = now();
+  save();
+  return part;
+}
 
 // ---------------------------------------------------------------- projects
 export function createProject(input: { name?: unknown; description?: unknown }) {
@@ -211,6 +230,7 @@ export function updatePart(projectId: string, partId: string, input: Record<stri
 export function deletePart(projectId: string, partId: string) {
   const { project, part } = getPart(projectId, partId);
   if (part.file) fs.rmSync(partFilePath(projectId, part), { force: true });
+  fs.rmSync(thumbPath(projectId, part), { force: true });
   project.parts = project.parts.filter((x) => x !== part);
   log(project, `Removed part "${part.name}"`);
   save();
@@ -226,12 +246,30 @@ export function attachFile(projectId: string, partId: string | null, originalNam
   let part = partId ? project.parts.find((x) => x.id === partId) : undefined;
   if (partId && !part) throw new UserError('Part not found', 404);
   if (part?.file) fs.rmSync(partFilePath(projectId, part), { force: true });
+  if (part?.thumbnail) { fs.rmSync(thumbPath(projectId, part), { force: true }); delete part.thumbnail; }
   if (!part) {
-    part = { id: newId(), name: name.replace(/\.[^.]+$/, ''), quantity: 1, printed: 0, failed: 0, perPlate: 1, createdAt: now() };
+    // "Bracket_v2.gcode.3mf" → "Bracket_v2"
+    part = { id: newId(), name: name.replace(/(\.(gcode|3mf|stl|obj|step|stp))+$/i, ''), quantity: 1, printed: 0, failed: 0, perPlate: 1, createdAt: now() };
     project.parts.push(part);
   }
   part.file = { name, size, kind, uploadedAt: now() };
-  fs.renameSync(tmpPath, partFilePath(projectId, part));
+  const file = partFilePath(projectId, part);
+  fs.renameSync(tmpPath, file);
+
+  if (kind === '3mf') {
+    const { thumbnail, slice } = inspect3mf(file);
+    if (thumbnail) { fs.writeFileSync(thumbPath(projectId, part), thumbnail); part.thumbnail = now(); }
+    if (slice) {
+      part.file.slice = slice;
+      // Fill in time and filament per piece from the slicer, unless you already set them.
+      // A plate holds `perPlate` pieces, so split the plate totals over them.
+      const plates = Math.max(1, slice.plates);
+      if (part.minutesPerPiece == null && slice.minutes != null) part.minutesPerPiece = Math.round(slice.minutes / plates / part.perPlate);
+      if (part.gramsPerPiece == null && slice.grams != null) part.gramsPerPiece = Math.round((slice.grams / plates / part.perPlate) * 10) / 10;
+      if (!part.material && slice.filaments[0]?.type) part.material = slice.filaments[0].type;
+      if (!part.color && /^#[0-9a-f]{6}/i.test(slice.filaments[0]?.color ?? '')) part.color = slice.filaments[0].color.slice(0, 7).toLowerCase();
+    }
+  }
   log(project, `Uploaded ${name}`);
   save();
   return part;
@@ -270,6 +308,7 @@ function countJob(job: PrintJob) {
     log(project, `${part.name}: print "${job.name}" failed (+${pieces} failed)`);
   }
   job.counted = { projectId: project.id, projectName: project.name, partId: part.id, partName: part.name, pieces };
+  if (part.gramsPerPiece != null) job.grams = Math.round(part.gramsPerPiece * pieces * 10) / 10;
   save();
 }
 

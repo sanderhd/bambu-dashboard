@@ -29,6 +29,8 @@ export function proxy(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
+// Also public: app icons, the web app manifest, the service worker and its offline page
+// (browsers fetch the manifest without cookies, so it can't sit behind the login).
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/upload/).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|manifest.webmanifest|sw.js|offline.html|api/upload/).*)'],
 };

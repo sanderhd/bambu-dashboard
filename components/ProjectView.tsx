@@ -32,6 +32,27 @@ export default function ProjectView({ id }: { id: string }) {
   }, [id]);
   useEffect(() => { reload(); }, [reload]);
 
+  // STL files have no built-in preview: render one in the browser, once, and store it on the server.
+  const tried = useRef(new Set<string>());
+  useEffect(() => {
+    const todo = project?.parts.filter((p) => p.file?.kind === 'stl' && !p.thumbnail && !tried.current.has(p.id)) ?? [];
+    if (!todo.length) return;
+    let cancelled = false;
+    (async () => {
+      const { renderStlThumbnail } = await import('@/lib/stl-scene');
+      for (const p of todo) {
+        if (cancelled) return;
+        tried.current.add(p.id);
+        try {
+          const png = await renderStlThumbnail(`/api/projects/${id}/parts/${p.id}/file`, p.color);
+          await fetch(`/api/projects/${id}/parts/${p.id}/thumb`, { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: png });
+        } catch { /* no preview then; the icon stays */ }
+      }
+      if (!cancelled) reload();
+    })();
+    return () => { cancelled = true; };
+  }, [project, id, reload]);
+
   const patchProject = async (patch: Partial<Project>) => {
     try { setProject((await api(`/api/projects/${id}`, 'PATCH', patch)).project); } catch (e) { setError((e as Error).message); }
   };
@@ -274,7 +295,15 @@ function PartRow({ projectId, part, onChange, onView, onReplace }: {
   return (
     <div className={`part ${done ? 'done' : ''}`}>
       <div className="part-main">
-        <div className="part-icon" style={part.color ? { background: part.color } : undefined}>{part.file?.kind.toUpperCase() ?? '—'}</div>
+        {part.thumbnail ? (
+          <button className="part-thumb" onClick={part.file?.kind === 'stl' ? onView : undefined} disabled={part.file?.kind !== 'stl'}
+            aria-label={part.file?.kind === 'stl' ? `3D view of ${part.name}` : undefined}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- small private preview, served by the API */}
+            <img src={`${url}/thumb?v=${part.thumbnail}`} alt="" loading="lazy" />
+          </button>
+        ) : (
+          <div className="part-icon" style={part.color ? { background: part.color } : undefined}>{part.file?.kind.toUpperCase() ?? '—'}</div>
+        )}
         <div className="part-info">
           <b>{part.name}</b>
           <span className="muted small">
@@ -284,6 +313,13 @@ function PartRow({ projectId, part, onChange, onView, onReplace }: {
             {part.minutesPerPiece != null && ` · ${fmtDur(part.minutesPerPiece)}/pc`}
             {part.gramsPerPiece != null && ` · ${part.gramsPerPiece} g/pc`}
           </span>
+          {part.file?.slice && (
+            <span className="muted small">
+              Sliced: {part.file.slice.plates} {part.file.slice.plates === 1 ? 'plate' : 'plates'}
+              {part.file.slice.minutes != null && ` · ${fmtDur(part.file.slice.minutes)}`}
+              {part.file.slice.grams != null && ` · ${part.file.slice.grams} g`}
+            </span>
+          )}
           {part.notes && <span className="muted small">{part.notes}</span>}
         </div>
         <div className="counter">

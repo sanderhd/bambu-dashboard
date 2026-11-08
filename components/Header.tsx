@@ -1,11 +1,12 @@
 'use client';
 import Link from 'next/link';
 
-export type Page = 'dashboard' | 'projects' | 'settings';
+export type Page = 'dashboard' | 'projects' | 'stats' | 'settings';
 
 const LINKS: [Page, string, string][] = [
   ['dashboard', '/', 'Dashboard'],
   ['projects', '/projects', 'Projects'],
+  ['stats', '/stats', 'Stats'],
   ['settings', '/settings', 'Settings'],
 ];
 

@@ -71,6 +71,10 @@ export default function ProjectsList() {
           )}
           {visible.map((p) => (
             <Link key={p.id} href={`/projects/${p.id}`} className="card project-card">
+              {p.cover && (
+                // eslint-disable-next-line @next/next/no-img-element -- private preview served by the API
+                <img className="project-cover" src={`/api/projects/${p.id}/parts/${p.cover.partId}/thumb?v=${p.cover.v}`} alt="" loading="lazy" />
+              )}
               <div className="row">
                 <b className="project-name">{p.name}</b>
                 <span className="spacer" />

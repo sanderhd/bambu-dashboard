@@ -45,6 +45,8 @@ ENV NODE_ENV=production \
 WORKDIR /app
 COPY --from=build --chown=node:node /src/.next/standalone ./
 COPY --from=build --chown=node:node /src/.next/static ./.next/static
+# app icons, service worker and offline page
+COPY --from=build --chown=node:node /src/public ./public
 RUN mkdir -p /app/data && chown node:node /app/data
 
 USER node

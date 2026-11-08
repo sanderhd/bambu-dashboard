@@ -6,6 +6,10 @@ import type { CameraConfig, Connection, PrinterInfo } from '@/lib/types';
 type SettingsResponse = {
   cameras: CameraConfig[];
   defaultCamera?: string;
+  ha: { url: string; powerEntity: string; energyEntity: string; tokenSet: boolean } | null;
+  printHoursOffset?: number;
+  totalPrintHours: number;
+  countedPrintHours: number;
   printer: PrinterInfo & { demo: boolean; ip: string | null; serial: string | null; connection: Connection };
 };
 
@@ -33,8 +37,9 @@ export default function SettingsView() {
         {data && (
           <>
             <CamerasSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
+            <HomeAssistantSection ha={data.ha} onSaved={(d) => setData({ ...data, ...d })} />
             <PasswordSection />
-            <PrinterSection p={data.printer} />
+            <PrinterSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
           </>
         )}
       </main>
@@ -178,8 +183,83 @@ function PasswordSection() {
 
 const confirm_ = (q: string) => window.confirm(q);
 
-// ---------------------------------------------------------------- printer (read-only)
-function PrinterSection({ p }: { p: SettingsResponse['printer'] }) {
+// ---------------------------------------------------------------- Home Assistant (smart plug)
+const DEFAULT_POWER = 'sensor.grillplats_plug_vermogen';
+const DEFAULT_ENERGY = 'sensor.grillplats_plug_energie';
+
+function HomeAssistantSection({ ha, onSaved }: { ha: SettingsResponse['ha']; onSaved: (d: Partial<SettingsResponse>) => void }) {
+  const [url, setUrl] = useState(ha?.url ?? '');
+  const [token, setToken] = useState('');
+  const [power, setPower] = useState(ha?.powerEntity ?? DEFAULT_POWER);
+  const [energy, setEnergy] = useState(ha?.energyEntity ?? DEFAULT_ENERGY);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [tests, setTests] = useState<{ entity: string; ok: boolean; message: string }[] | null>(null);
+
+  const body = { url, token, powerEntity: power, energyEntity: energy };
+  const test = async () => {
+    setTests(null);
+    const r = await api('/api/settings/test-ha', 'POST', body);
+    setTests(r.results ?? []);
+  };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const r = await api('/api/settings', 'PUT', { ha: body });
+    if (!r.ok) return setMsg({ ok: false, text: r.error });
+    setToken('');
+    onSaved({ ha: r.ha });
+    setMsg({ ok: true, text: 'Saved. Power shows on the dashboard; energy is recorded for each print from now on.' });
+  };
+  const disconnect = async () => {
+    if (!confirm('Stop reading the smart plug from Home Assistant?')) return;
+    const r = await api('/api/settings', 'PUT', { ha: null });
+    if (r.ok) { onSaved({ ha: null }); setMsg({ ok: true, text: 'Disconnected.' }); }
+  };
+
+  return (
+    <section className="card s6">
+      <h2>Home Assistant</h2>
+      <p className="muted small">
+        Reads your printer&apos;s smart plug: live power on the dashboard and energy (kWh) per print.
+        Create a token in Home Assistant under <b>your profile → Security → Long-lived access tokens</b>.
+      </p>
+      <form onSubmit={save}>
+        <label className="field"><span>Home Assistant URL</span>
+          <input className="mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.178.10:8123" required /></label>
+        <label className="field"><span>Long-lived access token {ha?.tokenSet && '(saved, leave empty to keep it)'}</span>
+          <input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={ha?.tokenSet ? '••••••••' : ''} required={!ha?.tokenSet} /></label>
+        <label className="field"><span>Power sensor (W)</span>
+          <input className="mono" value={power} onChange={(e) => setPower(e.target.value)} placeholder={DEFAULT_POWER} /></label>
+        <label className="field"><span>Energy sensor (kWh)</span>
+          <input className="mono" value={energy} onChange={(e) => setEnergy(e.target.value)} placeholder={DEFAULT_ENERGY} /></label>
+        {tests && (
+          <ul className="test-results">
+            {tests.map((t) => <li key={t.entity} className={t.ok ? 'ok-msg' : 'bad-msg'}>{t.ok ? '✓' : '✗'} {t.entity}: {t.message}</li>)}
+          </ul>
+        )}
+        <div className="row">
+          <button className="btn primary">Save</button>
+          <button type="button" className="btn" onClick={test} disabled={!url}>Test</button>
+          <span className="spacer" />
+          {ha && <button type="button" className="btn danger" onClick={disconnect}>Disconnect</button>}
+        </div>
+        {msg && <p className={msg.ok ? 'ok-msg' : 'bad-msg'}>{msg.text}</p>}
+      </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- printer
+function PrinterSection({ data, onSaved }: { data: SettingsResponse; onSaved: (d: Partial<SettingsResponse>) => void }) {
+  const p = data.printer;
+  const [offset, setOffset] = useState(String(data.printHoursOffset ?? 0));
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const saveHours = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const r = await api('/api/settings', 'PUT', { printHoursOffset: offset });
+    if (!r.ok) return setMsg({ ok: false, text: r.error });
+    onSaved({ printHoursOffset: r.printHoursOffset, totalPrintHours: r.totalPrintHours });
+    setMsg({ ok: true, text: `Saved. Total: ${r.totalPrintHours} print hours.` });
+  };
   const rows: [string, string | null][] = [
     ['Name', p.name],
     ['Model', p.model],
@@ -189,11 +269,26 @@ function PrinterSection({ p }: { p: SettingsResponse['printer'] }) {
     ['Printer camera', p.camera === 'jpeg' ? 'JPEG stream, port 6000' : p.camera === 'rtsp' ? 'RTSP via ffmpeg, port 322' : 'Off'],
   ];
   return (
-    <section className="card s6">
+    <section className="card s6" id="printer">
       <h2>Printer</h2>
       <ul className="list">
         {rows.filter(([, v]) => v).map(([k, v]) => <li key={k}><span className="muted">{k}</span><span>{v}</span></li>)}
       </ul>
+      <form onSubmit={saveHours} style={{ marginTop: 14 }}>
+        <label className="field">
+          <span>Print hours before this dashboard (for maintenance reminders)</span>
+          <input type="number" min={0} step="0.1" value={offset} onChange={(e) => setOffset(e.target.value)} />
+        </label>
+        <p className="muted small">
+          The A1 doesn&apos;t report its total print time, so fill in the hours it had already printed.
+          You can find it in the Bambu Handy app or on the printer. Counted by the dashboard so far: {data.countedPrintHours} h.
+          Total now: <b>{data.totalPrintHours} h</b>.
+        </p>
+        <div className="row">
+          <button className="btn primary">Save print hours</button>
+          {msg && <span className={msg.ok ? 'ok-msg' : 'bad-msg'}>{msg.text}</span>}
+        </div>
+      </form>
       <p className="muted small">
         These come from <code>.env</code> on the server. Change them there and restart the dashboard.
         {p.camera === 'jpeg' && <> For the printer camera, turn on <b>LAN Only Liveview</b> on the printer.</>}

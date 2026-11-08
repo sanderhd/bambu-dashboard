@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import type { Connection, PrintJob, PrinterInfo, PrintState, TempSample } from '@/lib/types';
+import type { Connection, Power, PrintJob, PrinterInfo, PrintState, TempSample } from '@/lib/types';
 
 /** Live printer state over Server-Sent Events. */
 export function usePrinter() {
@@ -11,6 +11,8 @@ export function usePrinter() {
   const [printer, setPrinter] = useState<PrinterInfo | null>(null);
   const [demo, setDemo] = useState(false);
   const [serverDown, setServerDown] = useState(false);
+  const [power, setPower] = useState<Power | null>(null);
+  const [jobEnergyKwh, setJobEnergyKwh] = useState<number | null>(null);
 
   useEffect(() => {
     const es = new EventSource('/api/events');
@@ -18,8 +20,11 @@ export function usePrinter() {
       const d = JSON.parse((e as MessageEvent).data);
       setState(d.state); setConnection(d.connection); setTempHistory(d.tempHistory);
       setPrintHistory(d.printHistory); setDemo(d.demo); setPrinter(d.printer);
+      setPower(d.power); setJobEnergyKwh(d.jobEnergyKwh);
       setServerDown(false);
     });
+    es.addEventListener('power', (e) => setPower(JSON.parse((e as MessageEvent).data)));
+    es.addEventListener('jobEnergy', (e) => setJobEnergyKwh(JSON.parse((e as MessageEvent).data)));
     es.addEventListener('state', (e) => {
       const d = JSON.parse((e as MessageEvent).data) as { state: PrintState; connection: Connection };
       setState(d.state); setConnection(d.connection);
@@ -56,5 +61,5 @@ export function usePrinter() {
     }
   }, []);
 
-  return { state, connection, tempHistory, printHistory, printer, demo, serverDown, command };
+  return { state, connection, tempHistory, printHistory, printer, demo, serverDown, power, jobEnergyKwh, command };
 }

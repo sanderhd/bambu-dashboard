@@ -6,12 +6,15 @@ import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
 import mqtt, { MqttClient } from 'mqtt';
-import type { CameraMode, Connection, PrintState, PrintJob, PrinterInfo, TempSample, Snapshot } from './types';
+import type { CameraMode, Connection, Power, PrintState, PrintJob, PrinterInfo, TempSample, Snapshot } from './types';
 
 const ROOT = process.cwd();
 const CONFIG_PATH = path.join(ROOT, 'config.json');
 const HISTORY_PATH = path.join(ROOT, 'data', 'print-history.json');
+const USAGE_PATH = path.join(ROOT, 'data', 'printer-usage.json');
 const TEMP_HISTORY_MAX = (60 * 60) / 5; // 1 hour at one sample every 5 s
+const HISTORY_MAX = 5000; // plenty for years of statistics, still a small file
+const TICK = 5; // seconds
 
 export type Config = { printerIp: string; serial: string; accessCode: string; name?: string; camera?: CameraMode | 'auto' };
 
@@ -66,15 +69,23 @@ class Printer extends EventEmitter {
   connection: Connection = { status: this.demo ? 'demo' : 'connecting', since: Date.now(), error: null };
   tempHistory: TempSample[] = [];
   printHistory: PrintJob[] = [];
+  /** Set by lib/homeassistant.ts when a smart plug is configured. */
+  power: Power | null = null;
+  jobEnergyKwh: number | null = null;
   private client: MqttClient | null = null;
   private lastGcodeState?: string;
   private jobStartedAt: number | null = null;
+  private jobSeconds = 0;
+  private usage = { printSeconds: 0 };
+  private usageDirty = false;
 
   constructor() {
     super();
     this.setMaxListeners(100);
     try { this.printHistory = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')); } catch { /* none yet */ }
-    setInterval(() => this.sampleTemps(), 5000);
+    try { this.usage = { ...this.usage, ...JSON.parse(fs.readFileSync(USAGE_PATH, 'utf8')) }; } catch { /* none yet */ }
+    setInterval(() => this.tick(), TICK * 1000);
+    setInterval(() => this.saveUsage(), 60_000);
     if (this.demo) this.startDemo(); else this.startMqtt();
   }
 
@@ -82,7 +93,35 @@ class Printer extends EventEmitter {
     return {
       state: this.state, connection: this.connection, tempHistory: this.tempHistory,
       printHistory: this.printHistory, demo: this.demo, printer: this.info,
+      power: this.power, jobEnergyKwh: this.jobEnergyKwh,
     };
+  }
+
+  /** Hours spent printing since the dashboard started counting (add Settings → print hours for the total). */
+  get countedPrintHours() { return this.usage.printSeconds / 3600; }
+
+  /** Rewrites the history file and tells browsers, e.g. after energy was added to a finished job. */
+  saveHistory() {
+    fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
+    fs.writeFile(HISTORY_PATH, JSON.stringify(this.printHistory), () => {});
+    this.emit('history', this.printHistory);
+  }
+
+  private saveUsage() {
+    if (!this.usageDirty) return;
+    this.usageDirty = false;
+    fs.mkdirSync(path.dirname(USAGE_PATH), { recursive: true });
+    fs.writeFile(USAGE_PATH, JSON.stringify(this.usage), () => {});
+  }
+
+  private tick() {
+    this.sampleTemps();
+    // Count only time spent actually printing (not paused, not idle) towards print hours.
+    if (this.state.gcode_state === 'RUNNING') {
+      this.usage.printSeconds += TICK;
+      this.jobSeconds += TICK;
+      this.usageDirty = true;
+    }
   }
 
   // ------------------------------------------------------------ state
@@ -108,7 +147,11 @@ class Printer extends EventEmitter {
     const gs = this.state.gcode_state;
     const prev = this.lastGcodeState;
     if (gs === prev) return;
-    if ((gs === 'RUNNING' || gs === 'PREPARE') && !this.jobStartedAt) this.jobStartedAt = Date.now();
+    if ((gs === 'RUNNING' || gs === 'PREPARE') && !this.jobStartedAt) {
+      this.jobStartedAt = Date.now();
+      this.jobSeconds = 0;
+      this.emit('jobStarted');
+    }
     const done = gs === 'FINISH' || gs === 'FAILED';
     const wasActive = prev && !['FINISH', 'FAILED', 'IDLE'].includes(prev);
     if (done && wasActive) {
@@ -118,15 +161,15 @@ class Printer extends EventEmitter {
         layers: this.state.total_layer_num ?? null,
         started: this.jobStartedAt,
         ended: Date.now(),
+        printSeconds: this.jobSeconds,
       };
-      // Listeners (project counting) may annotate the job before it is saved.
+      // Listeners (project counting, energy) may annotate the job; async ones call saveHistory() later.
       this.emit('jobFinished', job);
       this.printHistory.unshift(job);
-      this.printHistory = this.printHistory.slice(0, 100);
-      fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-      fs.writeFile(HISTORY_PATH, JSON.stringify(this.printHistory, null, 2), () => {});
+      this.printHistory = this.printHistory.slice(0, HISTORY_MAX);
       this.jobStartedAt = null;
-      this.emit('history', this.printHistory);
+      this.saveHistory();
+      this.saveUsage();
     }
     this.lastGcodeState = gs;
   }

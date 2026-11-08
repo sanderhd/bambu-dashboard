@@ -4,7 +4,7 @@ import { STATES, STAGES, SPEEDS, fmtDur } from '@/lib/format';
 
 const C = 2 * Math.PI * 60;
 
-export default function JobCard({ s, send }: { s: PrintState; send: (a: string, v?: unknown) => void }) {
+export default function JobCard({ s, send, energyKwh }: { s: PrintState; send: (a: string, v?: unknown) => void; energyKwh?: number | null }) {
   const gs = s.gcode_state;
   const active = gs === 'RUNNING' || gs === 'PAUSE' || gs === 'PREPARE';
   const pct = s.mc_percent ?? 0;
@@ -44,6 +44,7 @@ export default function JobCard({ s, send }: { s: PrintState; send: (a: string, 
             <div><span>Remaining</span><b>{active ? fmtDur(s.mc_remaining_time) : '–'}</b></div>
             <div><span>Done at</span><b>{eta}</b></div>
             <div><span>Speed</span><b>{s.spd_lvl ? `${SPEEDS[s.spd_lvl]}${s.spd_mag ? ` (${s.spd_mag}%)` : ''}` : '–'}</b></div>
+            {active && energyKwh != null && <div><span>Energy so far</span><b>{energyKwh.toFixed(2)} kWh</b></div>}
           </div>
         </div>
       </div>

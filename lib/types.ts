@@ -67,7 +67,13 @@ export type CameraConfig = { id: string; name: string; type: 'mjpeg'; url: strin
 /** A camera as shown in the camera dropdown. `printer` is the printer's built-in camera. */
 export type CameraInfo = { id: string; name: string; type: 'printer' | 'mjpeg' };
 
-export type Settings = { cameras: CameraConfig[]; defaultCamera?: string };
+export type Settings = {
+  cameras: CameraConfig[];
+  defaultCamera?: string;
+  ha?: HaSettings;
+  /** Print hours the printer had before this dashboard started counting. */
+  printHoursOffset?: number;
+};
 
 export type TempSample = { t: number; nozzle: number; nozzleTarget: number; bed: number; bedTarget: number };
 
@@ -79,16 +85,53 @@ export type PrintJob = {
   ended: number;
   /** Set when the print was counted towards a project part automatically. */
   counted?: { projectId: string; projectName: string; partId: string; partName: string; pieces: number };
+  /** Seconds the printer was actually printing (pauses excluded). */
+  printSeconds?: number;
+  /** Energy used, from the Home Assistant energy sensor (start → end of the print). */
+  energyKwh?: number;
+  /** Filament used, when known (from the counted part's grams per piece). */
+  grams?: number;
+};
+
+export type Power = { watts: number | null; at: number; error: string | null };
+
+export type HaSettings = { url: string; token?: string; powerEntity: string; energyEntity: string };
+
+export type MaintenanceTask = {
+  id: string;
+  name: string;
+  notes?: string;
+  intervalHours?: number; // print hours between services
+  intervalDays?: number; // or calendar days
+  lastDoneHours: number; // total print hours when last done
+  lastDoneAt: number; // timestamp when last done
+};
+
+export type MaintenanceStatus = MaintenanceTask & {
+  hoursSince: number;
+  daysSince: number;
+  progress: number; // 0..1+ of the interval used up (whichever runs out first)
+  state: 'ok' | 'soon' | 'due';
 };
 
 // ---------------------------------------------------------------- projects
 
 export type FileKind = 'stl' | '3mf' | 'obj' | 'step' | 'gcode';
 
+/** Read from a sliced .gcode.3mf (Metadata/slice_info.config). */
+export type SliceInfo = {
+  plates: number;
+  minutes: number | null; // all plates together
+  grams: number | null;
+  filaments: { type: string; color: string; grams: number | null }[];
+};
+
 export type Part = {
   id: string;
   name: string;
-  file?: { name: string; size: number; kind: FileKind; uploadedAt: number };
+  file?: { name: string; size: number; kind: FileKind; uploadedAt: number; slice?: SliceInfo };
+  /** Preview image: embedded in 3MF files, rendered in the browser for STL. Value = version stamp. */
+  thumbnail?: number;
   quantity: number; // pieces needed
   printed: number; // good pieces
   failed: number; // failed pieces (not counted towards printed)
@@ -119,6 +162,7 @@ export type Project = {
 };
 
 export type ProjectSummary = Omit<Project, 'parts' | 'activity'> & {
+  cover: { partId: string; v: number } | null;
   partCount: number;
   needed: number;
   printed: number;
@@ -134,4 +178,7 @@ export type Snapshot = {
   printHistory: PrintJob[];
   demo: boolean;
   printer: PrinterInfo;
+  power: Power | null;
+  /** Energy used by the current print so far, when Home Assistant is set up. */
+  jobEnergyKwh: number | null;
 };

@@ -16,6 +16,10 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
 - Live camera: the printer's own camera plus any USB webcam or IP camera, with a camera picker
 - Projects: upload STL/3MF files, set how many of each part you need and track what's printed,
   with a 3D preview and automatic counting of finished prints
+- Stats: prints, success rate, print time, filament and energy per day/week/month
+- Maintenance reminders by print hours or days, with an adjustable A1 starter list
+- Power and energy per print from a smart plug in Home Assistant
+- Installable as an app on your phone (PWA) when served over HTTPS
 - Password login (set on first visit) and a Settings page
 - Print history, saved to `data/print-history.json`
 - All raw printer data
@@ -56,6 +60,37 @@ Under **Projects** you group the parts of something you're building:
   The print history on the dashboard shows where each print was counted.
 
 Files are stored in `data/projects/` (the `bambu-data` volume in Docker).
+
+**Previews:** 3MF files show the plate image they already contain. For a sliced `.gcode.3mf`
+(Bambu Studio / OrcaSlicer) the print time, filament weight, material and colour are filled in too,
+unless you set them yourself. STL files get a preview rendered once by your browser.
+
+## Stats and maintenance
+The **Stats** page shows prints (succeeded/failed), print time, filament and energy per day, week or
+month, with a table view under every chart. It only knows prints finished while the dashboard ran.
+
+Maintenance reminders count **print hours** (time actually printing, pauses excluded) and/or days.
+The A1 doesn't report its lifetime print time, so enter the hours it already had under
+**Settings → Printer**. A starter list of A1 jobs is included; the intervals are suggestions, so adjust
+them to how you print. Tasks that are due show on the dashboard with a *Mark done* button.
+
+## Home Assistant (smart plug)
+Under **Settings → Home Assistant** enter your Home Assistant URL, a long-lived access token
+(profile → Security) and the plug's power (W) and energy (kWh) sensors. The dashboard then shows live
+power and records the energy each print used. The token is stored on the server only.
+
+## Using it over HTTPS / as an app
+Put the dashboard behind a reverse proxy with HTTPS, such as Nginx Proxy Manager, and open it there.
+Your phone can then install it (browser menu → *Install app* / *Add to Home Screen*).
+
+Notes for the proxy:
+- Forward the **Host** header unchanged (NPM does this by default). Otherwise saving and uploading
+  fail with "Cross-origin request blocked".
+- Live updates and camera streams send `X-Accel-Buffering: no`, so nginx doesn't hold them back.
+- Login limits are per visitor, based on `X-Real-IP` (set by NPM), plus a shared limit of 50 wrong
+  passwords per 15 minutes. If someone hammers your login from the internet, logging in can pause for
+  a few minutes for everyone. Consider limiting access (e.g. NPM access lists or a VPN).
+- Uploads can be up to 300 MB; raise the proxy's body size limit if uploads fail with *413*.
 
 ## Cameras
 - **Printer camera (A1, A1 mini, P1P, P1S):** on the printer, turn on **LAN Only Liveview** in the
@@ -129,8 +164,13 @@ app/
   api/settings/          settings (cameras) and camera URL test
   api/projects/          projects and parts (JSON), model file downloads
   api/upload/            streaming model upload (not behind proxy.ts, see the note there)
+  api/stats/             finished prints for the Stats page
+  api/maintenance/       maintenance tasks
   login/, settings/      login and settings pages
   projects/              project list and project pages
+  stats/                 statistics and maintenance
+  manifest.ts            web app manifest (PWA)
+public/                  app icons, service worker (sw.js), offline page
 components/              the dashboard cards, login form, settings view
 hooks/usePrinter.ts      live data in the browser
 lib/printer.ts           MQTT connection to the printer (server only)
@@ -138,6 +178,9 @@ lib/cameras.ts           camera sources: printer camera, MJPEG/snapshot URLs
 lib/auth.ts              password hashing and signed session cookies
 lib/settings.ts          settings stored in data/settings.json
 lib/projects.ts          projects, parts, file storage and automatic counting
+lib/threemf.ts           reads previews and slicing info from 3MF files
+lib/maintenance.ts       maintenance tasks and print hours
+lib/homeassistant.ts     smart plug power and energy via Home Assistant
 lib/types.ts, format.ts  shared types and labels
 proxy.ts                 requires a login for every page and API route
 instrumentation.ts       connects to the printer when the server starts
