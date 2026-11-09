@@ -9,6 +9,8 @@ type SettingsResponse = {
   defaultCamera?: string;
   ha: { url: string; powerEntity: string; energyEntity: string; tokenSet: boolean } | null;
   notify: { events: NotifyEvent[]; snapshot: boolean; camera: string; pushbulletSet: boolean; discordSet: boolean };
+  affine: { url: string; email: string; workspaceId: string; auto: boolean; otherPrints: boolean; passwordSet: boolean } | null;
+  affineStatus: AffineStatus;
   printHoursOffset?: number;
   totalPrintHours: number;
   countedPrintHours: number;
@@ -16,6 +18,7 @@ type SettingsResponse = {
 };
 
 type Draft = { id?: string; name: string; url: string };
+type AffineStatus = { pages: number; pending: number; lastSync: number | null; lastError: { at: number; message: string } | null; otherUrl: string | null };
 
 async function api<T = any>(url: string, method = 'GET', body?: unknown): Promise<T> {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
@@ -41,6 +44,7 @@ export default function SettingsView() {
             <CamerasSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
             <HomeAssistantSection ha={data.ha} onSaved={(d) => setData({ ...data, ...d })} />
             <NotificationsSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
+            <AffineSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
             <PasswordSection />
             <PrinterSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
             <BackupSection />
@@ -349,6 +353,119 @@ function NotificationsSection({ data, onSaved }: { data: SettingsResponse; onSav
           <span className="spacer" />
           {n.pushbulletSet && <button type="button" className="btn danger" onClick={() => remove('pushbullet')}>Remove Pushbullet</button>}
           {n.discordSet && <button type="button" className="btn danger" onClick={() => remove('discord')}>Remove Discord</button>}
+        </div>
+        {msg && <p className={msg.ok ? 'ok-msg' : 'bad-msg'}>{msg.text}</p>}
+      </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- AFFiNE
+type Workspace = { id: string; name: string };
+
+function AffineSection({ data, onSaved }: { data: SettingsResponse; onSaved: (d: Partial<SettingsResponse>) => void }) {
+  const a = data.affine;
+  const [url, setUrl] = useState(a?.url ?? '');
+  const [email, setEmail] = useState(a?.email ?? '');
+  const [password, setPassword] = useState('');
+  const [workspaceId, setWorkspaceId] = useState(a?.workspaceId ?? '');
+  const [workspaces, setWorkspaces] = useState<Workspace[] | null>(null);
+  const [auto, setAuto] = useState(a?.auto ?? true);
+  const [otherPrints, setOtherPrints] = useState(a?.otherPrints ?? true);
+  const [test, setTest] = useState<{ ok: boolean; text: string } | 'busy' | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const st = data.affineStatus;
+
+  const connect = async () => {
+    setTest('busy');
+    const r = await api('/api/settings/test-affine', 'POST', { url, email, password })
+      .catch(() => ({ ok: false, error: 'The dashboard server did not answer' }));
+    if (!r.ok) return setTest({ ok: false, text: r.error });
+    setWorkspaces(r.workspaces);
+    if (!r.workspaces.some((w: Workspace) => w.id === workspaceId)) setWorkspaceId(r.workspaces[0]?.id ?? '');
+    setTest({
+      ok: r.workspaces.length > 0,
+      text: r.workspaces.length
+        ? `Signed in as ${r.user.name || r.user.email} (AFFiNE ${r.version}). Choose the workspace below and save.`
+        : `Signed in as ${r.user.email}, but this account isn't in any workspace yet. Invite it to one in AFFiNE first.`,
+    });
+  };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const r = await api('/api/settings', 'PUT', { affine: { url, email, password, workspaceId, auto, otherPrints, timeZone } });
+    if (!r.ok) return setMsg({ ok: false, text: r.error });
+    setPassword('');
+    onSaved({ affine: r.affine, affineStatus: r.affineStatus });
+    setMsg({ ok: true, text: auto ? 'Saved. Project pages are created and updated after each print.' : 'Saved. Use the buttons on projects, History and Stats to send pages to AFFiNE.' });
+  };
+  const syncNow = async () => {
+    setSyncing(true);
+    setMsg(null);
+    try {
+      const r = await fetch('/api/affine/sync', { method: 'POST' }).then((x) => x.json());
+      if (!r.ok) setMsg({ ok: false, text: r.error });
+      else { onSaved({ affineStatus: r.status }); setMsg({ ok: true, text: `Updated ${r.status.pages} ${r.status.pages === 1 ? 'page' : 'pages'}.` }); }
+    } finally { setSyncing(false); }
+  };
+  const disconnect = async () => {
+    if (!confirm('Stop sending anything to AFFiNE? The pages in AFFiNE stay where they are.')) return;
+    const r = await api('/api/settings', 'PUT', { affine: null });
+    if (r.ok) { onSaved({ affine: null, affineStatus: r.affineStatus }); setMsg({ ok: true, text: 'Disconnected.' }); }
+  };
+
+  const list = workspaces ?? (a ? [{ id: a.workspaceId, name: 'Saved workspace' }] : []);
+  return (
+    <section className="card s6" id="affine">
+      <h2>AFFiNE</h2>
+      <p className="muted small">
+        Keeps a page per project in your self-hosted AFFiNE (overview and print log, with room for your own notes), logs other
+        prints, and sends reports from History and Stats. AFFiNE has no access tokens that can write, so the dashboard signs in
+        with an account. Use a separate account for it (e.g. <span className="mono">dashboard@…</span>) and invite it to the workspace.
+      </p>
+      <form onSubmit={save}>
+        <label className="field"><span>AFFiNE URL</span>
+          <input className="mono" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.178.10:3010" required /></label>
+        <label className="field"><span>Email</span>
+          <input type="email" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
+        <label className="field"><span>Password {a?.passwordSet && '(saved, leave empty to keep it)'}</span>
+          <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)}
+            placeholder={a?.passwordSet ? '••••••••' : ''} required={!a?.passwordSet} /></label>
+        <div className="row">
+          <button type="button" className="btn" onClick={connect} disabled={test === 'busy' || !url || !email || (!password && !a?.passwordSet)}>
+            {test === 'busy' ? 'Signing in…' : 'Sign in and load workspaces'}
+          </button>
+        </div>
+        {test && test !== 'busy' && <p className={test.ok ? 'ok-msg small' : 'bad-msg small'}>{test.text}</p>}
+
+        {list.length > 0 && (
+          <label className="field"><span>Workspace</span>
+            <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} required>
+              {list.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+            </select></label>
+        )}
+        <label className="toggle" style={{ marginBottom: 8 }}>
+          <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Update project pages automatically after each print
+        </label>
+        <label className="toggle" style={{ marginBottom: 8 }}>
+          <input type="checkbox" checked={otherPrints} onChange={(e) => setOtherPrints(e.target.checked)} /> Log prints without a project on a separate page
+        </label>
+
+        {a && (
+          <p className="muted small">
+            {st.pages} {st.pages === 1 ? 'page' : 'pages'} kept up to date
+            {st.lastSync && ` · last update ${new Date(st.lastSync).toLocaleString()}`}
+            {st.pending > 0 && ` · ${st.pending} waiting to be sent`}
+            {st.otherUrl && <> · <a href={st.otherUrl} target="_blank" rel="noopener noreferrer">other prints ↗</a></>}
+          </p>
+        )}
+        {st.lastError && <p className="bad-msg small">Last problem ({new Date(st.lastError.at).toLocaleString()}): {st.lastError.message}</p>}
+        <div className="row">
+          <button className="btn primary" disabled={!workspaceId}>Save</button>
+          {a && <button type="button" className="btn" onClick={syncNow} disabled={syncing}>{syncing ? 'Updating…' : 'Update all pages now'}</button>}
+          <span className="spacer" />
+          {a && <button type="button" className="btn danger" onClick={disconnect}>Disconnect</button>}
         </div>
         {msg && <p className={msg.ok ? 'ok-msg' : 'bad-msg'}>{msg.text}</p>}
       </form>

@@ -1,7 +1,9 @@
 import { requireSession } from '@/lib/auth';
 import { totalPrintHours } from '@/lib/maintenance';
 import { getPrinter } from '@/lib/printer';
-import { publicSettings, saveSettings, validateCameras, validateHa, validateNotify, validatePrintHours } from '@/lib/settings';
+import { status as affineStatus } from '@/lib/affine-sync';
+import { getSettings, publicSettings, saveSettings, validateAffine, validateCameras, validateHa, validateNotify, validatePrintHours } from '@/lib/settings';
+import { forgetSession } from '@/lib/affine';
 import type { Settings } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +13,7 @@ function response() {
   const serial = p.config?.serial ?? '';
   return {
     ...publicSettings(),
+    affineStatus: affineStatus(),
     totalPrintHours: totalPrintHours(),
     countedPrintHours: Math.round(p.countedPrintHours * 10) / 10,
     printer: {
@@ -43,6 +46,11 @@ export async function PUT(req: Request) {
     }
     if ('ha' in body) patch.ha = validateHa(body.ha);
     if ('notify' in body) patch.notify = validateNotify(body.notify);
+    if ('affine' in body) {
+      const old = getSettings().affine;
+      patch.affine = validateAffine(body.affine);
+      if (old && (old.email !== patch.affine?.email || old.password !== patch.affine?.password || old.url !== patch.affine?.url)) forgetSession(old);
+    }
     if ('printHoursOffset' in body) patch.printHoursOffset = validatePrintHours(body.printHoursOffset);
     saveSettings(patch);
     return Response.json({ ok: true, ...response() });

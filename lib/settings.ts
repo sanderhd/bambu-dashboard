@@ -5,7 +5,7 @@ import { EventEmitter } from 'events';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { CameraConfig, HaSettings, NotifyEvent, NotifySettings, Settings } from './types';
+import type { AffineSettings, CameraConfig, HaSettings, NotifyEvent, NotifySettings, Settings } from './types';
 
 const FILE = path.join(process.cwd(), 'data', 'settings.json');
 const DEFAULTS: Settings = { cameras: [] };
@@ -34,7 +34,7 @@ export const getSettings = (): Settings => store.data;
 
 /** Settings as sent to the browser: tokens and webhook URLs never leave the server. */
 export function publicSettings() {
-  const { ha, notify, ...rest } = store.data;
+  const { ha, notify, affine, ...rest } = store.data;
   return {
     ...rest,
     ha: ha ? { url: ha.url, powerEntity: ha.powerEntity, energyEntity: ha.energyEntity, tokenSet: !!ha.token } : null,
@@ -45,6 +45,9 @@ export function publicSettings() {
       pushbulletSet: !!notify?.pushbullet,
       discordSet: !!notify?.discord,
     },
+    affine: affine
+      ? { url: affine.url, email: affine.email, workspaceId: affine.workspaceId, auto: affine.auto, otherPrints: affine.otherPrints, passwordSet: !!affine.password }
+      : null,
   };
 }
 
@@ -117,6 +120,36 @@ export function validateNotify(input: unknown): NotifySettings {
     events,
     snapshot: 'snapshot' in i ? !!i.snapshot : saved?.snapshot ?? true,
     camera,
+  };
+}
+
+/**
+ * AFFiNE settings from the browser. An empty password keeps the saved one (for the same account);
+ * `null` turns the integration off.
+ */
+export function validateAffine(input: unknown): AffineSettings | undefined {
+  if (input === null) return undefined;
+  const i = (input ?? {}) as Record<string, unknown>;
+  const saved = store.data.affine;
+  const url = String(i.url ?? '').trim().replace(/\/+$/, '');
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw new Error('AFFiNE URL is invalid'); }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('AFFiNE URL must start with http:// or https://');
+  const email = String(i.email ?? '').trim();
+  if (!/^[^\s@]+@[^\s@]+$/.test(email) || email.length > 200) throw new Error('Enter the email address of the AFFiNE account');
+  const sameAccount = saved && saved.email.toLowerCase() === email.toLowerCase() && saved.url === url;
+  const password = String(i.password ?? '') || (sameAccount ? saved.password : '');
+  if (!password) throw new Error('Enter the password of the AFFiNE account');
+  if (password.length > 500) throw new Error('Password is too long');
+  const workspaceId = String(i.workspaceId ?? '').trim();
+  if (!/^[\w-]{1,100}$/.test(workspaceId)) throw new Error('Choose a workspace');
+  let timeZone = String(i.timeZone ?? saved?.timeZone ?? '').trim() || undefined;
+  if (timeZone) { try { new Intl.DateTimeFormat('en', { timeZone }); } catch { timeZone = undefined; } }
+  return {
+    url, email, password, workspaceId,
+    auto: 'auto' in i ? !!i.auto : saved?.auto ?? true,
+    otherPrints: 'otherPrints' in i ? !!i.otherPrints : saved?.otherPrints ?? true,
+    timeZone,
   };
 }
 

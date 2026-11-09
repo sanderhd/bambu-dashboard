@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Header from './Header';
+import { SendToAffine, type Report } from './Affine';
 import BarChart, { type Bucket } from './BarChart';
 import { sinceText } from './MaintenanceCard';
 import { api, fmtGrams } from '@/lib/client';
@@ -76,6 +77,8 @@ export default function StatsView() {
           {RANGES.map(([r, label]) => (
             <button key={r} className={`chip ${range === r ? 'on' : ''}`} aria-pressed={range === r} onClick={() => setRange(r)}>{label}</button>
           ))}
+          <span className="spacer" />
+          <SendToAffine disabled={!jobs} build={() => statsReport(range, sel, buckets, totalHours)} />
         </div>
 
         <section className="s12 tiles" style={{ opacity: jobs ? 1 : 0.5 }}>
@@ -112,6 +115,39 @@ export default function StatsView() {
       </main>
     </>
   );
+}
+
+/** The selected period as an AFFiNE page: totals, then one row per day, week or month (newest first). */
+function statsReport(range: Range, sel: PrintJob[], buckets: { title: string; jobs: PrintJob[] }[], totalHours: number | null): Report {
+  const ok = sel.filter((j) => j.result === 'FINISH').length;
+  const withGrams = sel.filter((j) => j.grams != null);
+  const withEnergy = sel.filter((j) => j.energyKwh != null);
+  const sumG = (js: PrintJob[]) => js.reduce((n, j) => n + (j.grams ?? 0), 0);
+  const sumE = (js: PrintJob[]) => js.reduce((n, j) => n + (j.energyKwh ?? 0), 0);
+  const sumH = (js: PrintJob[]) => js.reduce((n, j) => n + jobHours(j), 0);
+  const period = RANGES.find(([r]) => r === range)![1];
+  return {
+    kind: 'stats',
+    title: `Print stats · ${period.toLowerCase()} · ${new Date().toLocaleDateString(undefined, { dateStyle: 'medium' })}`,
+    blocks: [
+      { t: 'h2', text: `Totals: ${period.toLowerCase()}` },
+      { t: 'li', text: `Prints: ${sel.length} (${ok} succeeded, ${sel.length - ok} failed)` },
+      { t: 'li', text: `Success rate: ${sel.length ? `${Math.round((ok / sel.length) * 100)}%` : '–'}` },
+      { t: 'li', text: `Print time: ${sumH(sel).toFixed(1)} h` },
+      { t: 'li', text: `Filament: ${withGrams.length ? `${fmtGrams(sumG(sel))} (from ${withGrams.length} of ${sel.length} prints)` : '–'}` },
+      { t: 'li', text: `Energy: ${withEnergy.length ? `${sumE(sel).toFixed(1)} kWh (from ${withEnergy.length} of ${sel.length} prints)` : '–'}` },
+      ...(totalHours != null ? [{ t: 'li' as const, text: `Total print hours (all time): ${totalHours} h` }] : []),
+      { t: 'h2', text: range === '30d' ? 'Per day' : range === '12w' ? 'Per week' : 'Per month' },
+      {
+        t: 'table',
+        rows: [['Period', 'Prints', 'Failed', 'Hours', 'Filament', 'Energy'], ...[...buckets].reverse().filter((b) => b.jobs.length).map((b) => [
+          b.title, String(b.jobs.length), String(b.jobs.filter((j) => j.result === 'FAILED').length), sumH(b.jobs).toFixed(1),
+          fmtGrams(sumG(b.jobs)), `${sumE(b.jobs).toFixed(2)} kWh`,
+        ])],
+      },
+      { t: 'p', text: `Exported from Bambu Dashboard, ${new Date().toLocaleString()}.` },
+    ],
+  };
 }
 
 function Tile({ label, value, note }: { label: string; value: string; note?: React.ReactNode }) {

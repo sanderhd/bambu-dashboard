@@ -191,7 +191,7 @@ textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transp
 .project-cover { width: calc(100% + 36px); margin: -18px -18px 0; height: 140px; object-fit: contain; background: var(--bg); border-radius: 14px 14px 0 0; border-bottom: 1px solid var(--line); }
 
 /* stats */
-.filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.filter-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .chip { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
 .chip.on { border-color: var(--ink); font-weight: 600; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; transition: opacity .2s; }
@@ -256,3 +256,17 @@ textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transp
 .result.ok { color: var(--accent); }
 .result.bad { color: var(--bad); }
 .fil-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; border: 1px solid var(--line); vertical-align: -1px; }
+
+/* AFFiNE notes (read-only copy of the project's page) */
+.affine-notes { display: grid; gap: 6px; line-height: 1.5; }
+.affine-notes h3 { font-size: 16px; margin: 10px 0 2px; }
+.affine-notes h4 { font-size: 14px; margin: 8px 0 0; }
+.affine-notes p { margin: 0; white-space: pre-wrap; }
+.affine-notes blockquote { margin: 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+.affine-notes pre { margin: 0; padding: 10px 12px; background: var(--bg); border-radius: 8px; overflow-x: auto; font-size: 12px; }
+.affine-notes hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; width: 100%; }
+.affine-li { display: flex; gap: 8px; }
+.affine-li .done { text-decoration: line-through; color: var(--muted); }
+.affine-bullet { color: var(--muted); flex: none; width: 1em; text-align: center; }
+.affine-gap { height: 4px; }
+.affine-table td, .affine-table th { text-align: left; }

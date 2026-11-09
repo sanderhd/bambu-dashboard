@@ -8,8 +8,9 @@ const lowMemory = process.env.BAMBU_LOW_MEMORY === '1';
 const nextConfig: NextConfig = {
   // Self-contained server in .next/standalone, used by the Docker image.
   output: process.env.NEXT_OUTPUT === 'standalone' ? 'standalone' : undefined,
-  // mqtt uses Node modules (net/tls); load it from node_modules instead of bundling it.
-  serverExternalPackages: ['mqtt'],
+  // mqtt and socket.io-client (AFFiNE sync) use Node modules (net/tls, ws); load them from node_modules
+  // instead of bundling them. yjs must exist only once, or it warns and its documents misbehave.
+  serverExternalPackages: ['mqtt', 'socket.io-client', 'yjs'],
   // There may be a package-lock.json further up the directory tree; pin the project root explicitly.
   turbopack: { root: process.cwd() },
   outputFileTracingRoot: process.cwd(),

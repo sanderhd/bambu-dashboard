@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Header from './Header';
+import { ProjectAffineCard, type Report } from './Affine';
 import { Progress, STATUS_LABEL } from './ProjectsList';
 import { api, fmtBytes, fmtGrams, uploadFile } from '@/lib/client';
 import { fmtDur } from '@/lib/format';
@@ -164,6 +165,8 @@ export default function ProjectView({ id }: { id: string }) {
           </div>
         </section>
 
+        <ProjectAffineCard projectId={id} report={() => projectReport(project)} />
+
         <section className="card s12">
           <h2>Activity</h2>
           <ul className="list">
@@ -178,6 +181,41 @@ export default function ProjectView({ id }: { id: string }) {
       )}
     </>
   );
+}
+
+// ---------------------------------------------------------------- AFFiNE snapshot
+/** A dated copy of the project as it is now, for a separate AFFiNE page. */
+function projectReport(p: Project): Report {
+  const needed = p.parts.reduce((n, x) => n + x.quantity, 0);
+  const printed = p.parts.reduce((n, x) => n + Math.min(x.printed, x.quantity), 0);
+  const failed = p.parts.reduce((n, x) => n + x.failed, 0);
+  const left = (x: Part) => Math.max(0, x.quantity - x.printed);
+  const minutes = p.parts.reduce((n, x) => n + (x.minutesPerPiece != null ? left(x) * x.minutesPerPiece : 0), 0);
+  const grams = p.parts.reduce((n, x) => n + (x.gramsPerPiece != null ? left(x) * x.gramsPerPiece : 0), 0);
+  const date = new Date().toLocaleDateString(undefined, { dateStyle: 'medium' });
+  return {
+    kind: 'project',
+    projectId: p.id,
+    title: `${p.name} · snapshot ${date}`,
+    blocks: [
+      ...(p.description ? [{ t: 'quote' as const, text: p.description }] : []),
+      { t: 'h2', text: 'Progress' },
+      { t: 'li', text: `Status: ${STATUS_LABEL[p.status]}` },
+      { t: 'li', text: `Pieces: ${printed} of ${needed} printed${failed ? `, ${failed} failed` : ''}` },
+      ...(minutes ? [{ t: 'li' as const, text: `Print time left: ~${fmtDur(minutes)}` }] : []),
+      ...(grams ? [{ t: 'li' as const, text: `Filament left: ~${fmtGrams(grams)}` }] : []),
+      { t: 'h2', text: 'Parts' },
+      p.parts.length
+        ? { t: 'table', rows: [['Part', 'Printed', 'Needed', 'Failed', 'Material', 'Min/pc', 'g/pc', 'File'], ...p.parts.map((x) => [
+            x.name, String(x.printed), String(x.quantity), String(x.failed), x.material ?? '', x.minutesPerPiece?.toString() ?? '',
+            x.gramsPerPiece?.toString() ?? '', x.file?.name ?? '',
+          ])] }
+        : { t: 'p', text: 'No parts yet.' },
+      { t: 'h2', text: 'Recent activity' },
+      ...p.activity.slice(0, 20).map((a) => ({ t: 'li' as const, text: `${new Date(a.t).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}: ${a.text}` })),
+      { t: 'p', text: `Snapshot from Bambu Dashboard, ${new Date().toLocaleString()}.` },
+    ],
+  };
 }
 
 // ---------------------------------------------------------------- project editor

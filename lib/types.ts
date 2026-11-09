@@ -74,7 +74,37 @@ export type Settings = {
   /** Print hours the printer had before this dashboard started counting. */
   printHoursOffset?: number;
   notify?: NotifySettings;
+  affine?: AffineSettings;
 };
+
+export type AffineSettings = {
+  /** Self-hosted AFFiNE address, e.g. http://192.168.178.10:3010 */
+  url: string;
+  /** AFFiNE has no write tokens, so the dashboard signs in like the app does. */
+  email: string;
+  password: string;
+  workspaceId: string;
+  /** Update project pages after each print. */
+  auto: boolean;
+  /** Log prints that weren't counted on a project to a separate page. */
+  otherPrints: boolean;
+  /** For dates written to AFFiNE, e.g. Europe/Amsterdam (the server itself often runs in UTC). */
+  timeZone?: string;
+};
+
+/** A page body as read from AFFiNE, for showing notes in the dashboard. */
+export type AffineBlock =
+  | { t: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'p' | 'quote' | 'code'; text: string }
+  | { t: 'li'; text: string; kind: 'bulleted' | 'numbered' | 'todo' | 'toggle'; checked?: boolean; depth: number }
+  | { t: 'table'; rows: string[][] }
+  | { t: 'hr' }
+  | { t: 'other'; what: string };
+
+/** Content for a report page; built in the browser so dates and numbers use the viewer's locale. */
+export type ReportBlock =
+  | { t: 'h1' | 'h2' | 'h3' | 'p' | 'quote' | 'li'; text: string }
+  | { t: 'table'; rows: string[][] }
+  | { t: 'hr' };
 
 export type NotifyEvent = 'started' | 'finished' | 'failed' | 'paused' | 'hms' | 'maintenance';
 

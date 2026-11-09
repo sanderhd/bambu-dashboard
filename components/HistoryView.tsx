@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import Header from './Header';
+import { SendToAffine, type Report } from './Affine';
 import { api, fmtGrams } from '@/lib/client';
 import { fmtDur } from '@/lib/format';
 import type { PrintJob } from '@/lib/types';
@@ -54,6 +55,13 @@ export default function HistoryView() {
   const grams = filtered.reduce((n, j) => n + (j.grams ?? 0), 0);
   const kwh = filtered.reduce((n, j) => n + (j.energyKwh ?? 0), 0);
   const anyFilter = q || result !== 'all' || project || from || to;
+  const filterText = () => [
+    q && `search "${q}"`,
+    result !== 'all' && (result === 'FINISH' ? 'succeeded only' : 'failed only'),
+    project && (project === NO_PROJECT ? 'not counted on a project' : `project ${projects.find(([id]) => id === project)?.[1] ?? ''}`),
+    from && `from ${from}`,
+    to && `to ${to}`,
+  ].filter(Boolean).join(', ');
   const reset = () => { setQ(''); setResult('all'); setProject(''); setFrom(''); setTo(''); };
 
   return (
@@ -85,6 +93,7 @@ export default function HistoryView() {
             <button className="btn" disabled={!filtered.length} onClick={() => downloadCsv(filtered)}>
               Export CSV ({filtered.length})
             </button>
+            <SendToAffine disabled={!filtered.length} build={() => historyReport(filtered, filterText())} />
           </div>
           {jobs && (
             <p className="muted small" style={{ margin: '12px 0 0' }}>
@@ -140,6 +149,40 @@ export default function HistoryView() {
       </main>
     </>
   );
+}
+
+// ---------------------------------------------------------------- AFFiNE
+const MAX_REPORT_ROWS = 2000;
+
+function historyReport(jobs: PrintJob[], filters: string): Report {
+  const ok = jobs.filter((j) => j.result === 'FINISH').length;
+  const grams = jobs.reduce((n, j) => n + (j.grams ?? 0), 0);
+  const kwh = jobs.reduce((n, j) => n + (j.energyKwh ?? 0), 0);
+  const when = (t: number) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const shown = jobs.slice(0, MAX_REPORT_ROWS);
+  return {
+    kind: 'history',
+    title: `Print history · ${new Date().toLocaleDateString(undefined, { dateStyle: 'medium' })}`,
+    blocks: [
+      { t: 'p', text: filters ? `Filtered: ${filters}.` : 'All recorded prints.' },
+      { t: 'li', text: `${jobs.length} prints: ${ok} succeeded, ${jobs.length - ok} failed` },
+      ...(grams ? [{ t: 'li' as const, text: `Filament: ${fmtGrams(grams)}` }] : []),
+      ...(kwh ? [{ t: 'li' as const, text: `Energy: ${kwh.toFixed(1)} kWh` }] : []),
+      ...(jobs.length > shown.length ? [{ t: 'p' as const, text: `The table shows the newest ${shown.length}; export a CSV for all of them.` }] : []),
+      {
+        t: 'table',
+        rows: [['Finished', 'Print', 'Result', 'Duration', 'Filament', 'Energy', 'Project'], ...shown.map((j) => {
+          const d = durMin(j);
+          return [
+            when(j.ended), j.name, j.result === 'FINISH' ? '✅ Succeeded' : '❌ Failed', d != null ? fmtDur(d) : '–',
+            j.grams != null ? `${Math.round(j.grams)} g` : '–', j.energyKwh != null ? `${j.energyKwh.toFixed(2)} kWh` : '–',
+            j.counted ? `${j.counted.projectName} → ${j.counted.partName}` : '–',
+          ];
+        })],
+      },
+      { t: 'p', text: `Exported from Bambu Dashboard, ${new Date().toLocaleString()}.` },
+    ],
+  };
 }
 
 // ---------------------------------------------------------------- CSV

@@ -2,6 +2,7 @@
 // Metadata lives in data/projects/index.json, files in data/projects/<projectId>/.
 import 'server-only';
 import crypto from 'crypto';
+import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
 import { getPrinter } from './printer';
@@ -24,9 +25,11 @@ export class UserError extends Error {
 }
 
 // ---------------------------------------------------------------- store
-type Store = { projects: Project[] };
+type Store = { projects: Project[]; events?: EventEmitter };
 const g = globalThis as unknown as { __bambuProjects?: Store; __bambuProjectsHooked?: boolean };
 const store = (g.__bambuProjects ??= { projects: load() });
+/** 'change' after every save (e.g. to keep AFFiNE pages up to date). */
+export const projectEvents = (store.events ??= new EventEmitter());
 
 /** Re-reads the projects from disk, e.g. after restoring a backup. */
 export function reloadProjects() { store.projects = load(); }
@@ -40,6 +43,7 @@ function save() {
   const tmp = INDEX + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify({ projects: store.projects }, null, 2));
   fs.renameSync(tmp, INDEX); // atomic: a crash never leaves a half-written index
+  projectEvents.emit('change');
 }
 
 const newId = () => crypto.randomBytes(6).toString('base64url').replace(/[-_]/g, 'x').toLowerCase();

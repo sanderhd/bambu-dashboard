@@ -20,6 +20,8 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
 - Maintenance reminders by print hours or days, with an adjustable A1 starter list
 - Power and energy per print from a smart plug in Home Assistant
 - Notifications via Pushbullet and/or a Discord webhook, with a camera image
+- AFFiNE: a page per project with an overview and print log, your notes from it on the project page,
+  and reports from History, Stats and projects
 - Installable as an app on your phone (PWA) when served over HTTPS
 - Password login (set on first visit) and a Settings page
 - Print history with search, filters and CSV export, saved to `data/print-history.json`
@@ -109,6 +111,26 @@ notifications can include a camera image. **Send test** checks everything before
 Notifications are sent by the server, so they also arrive when no browser is open. The token and
 webhook URL are stored on the server only.
 
+## AFFiNE
+Under **Settings → AFFiNE** connect a self-hosted AFFiNE (tested with 0.27.4). AFFiNE has no access
+tokens that can write pages (its MCP credentials are read-only), so the dashboard signs in with an
+account, like the app does. Create a separate account for it (e.g. `dashboard@…`), invite it to the
+workspace, and enter that account's email and password. The password is stored in
+`data/settings.json` (readable only by the app) and never sent to the browser.
+
+- **Project pages:** each project gets a page "‹name› · 3D print", tagged *Bambu*, when its first print
+  is counted (or with **Create AFFiNE page** on the project). At the top is an overview (progress,
+  time and filament left, parts table) and a print log with one row per print. Both are kept up to
+  date after every print and when you change counts by hand. Everything below **Notes** is yours:
+  the dashboard never changes it, and shows it on the project page under *Notes in AFFiNE*.
+  Rows you delete from the print log stay deleted; if you delete the whole page, a new one is made.
+- **Other prints:** prints that weren't counted on a project go to the page "Print log · other prints"
+  (can be turned off).
+- **Reports:** **Send to AFFiNE** on History (the filtered prints), Stats (the selected period, per
+  day/week/month) and **Send snapshot** on a project create a new, dated page.
+- If AFFiNE can't be reached, the update is retried every 10 minutes; **Update all pages now** in
+  Settings does it right away. Which blocks belong to the dashboard is kept in `data/affine.json`.
+
 ## Using it over HTTPS / as an app
 Put the dashboard behind a reverse proxy with HTTPS, such as Nginx Proxy Manager, and open it there.
 Your phone can then install it (browser menu → *Install app* / *Add to Home Screen*).
@@ -196,6 +218,7 @@ app/
   api/upload/            streaming model upload (not behind proxy.ts, see the note there)
   api/stats/             finished prints for the Stats page
   api/maintenance/       maintenance tasks
+  api/affine/            AFFiNE project pages, reports and "update all pages now"
   login/, settings/      login and settings pages
   projects/              project list and project pages
   stats/                 statistics and maintenance
@@ -214,6 +237,8 @@ lib/filament.ts          fetches the running print's file over FTPS for its fila
 lib/backup.ts            backup and restore of data/
 lib/maintenance.ts       maintenance tasks and print hours
 lib/homeassistant.ts     smart plug power and energy via Home Assistant
+lib/affine.ts            AFFiNE client: sign-in, sync connection, pages as Yjs block documents
+lib/affine-sync.ts       AFFiNE project pages, print logs, notes and reports
 lib/types.ts, format.ts  shared types and labels
 proxy.ts                 requires a login for every page and API route
 instrumentation.ts       connects to the printer when the server starts

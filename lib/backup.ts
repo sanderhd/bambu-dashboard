@@ -9,6 +9,7 @@ import { getPrinter } from './printer';
 import { reloadMaintenance } from './maintenance';
 import { reloadProjects, UserError } from './projects';
 import { reloadSettings } from './settings';
+import { reloadAffine } from './affine-sync';
 import { extractToFile, listEntries, zipStream, type ZipSource } from './zip';
 
 const DATA = path.join(process.cwd(), 'data');
@@ -119,6 +120,7 @@ export async function restoreBackup(zipPath: string): Promise<{ files: number; c
     reloadSettings();
     reloadMaintenance();
     reloadProjects();
+    reloadAffine();
     getPrinter().loadData();
     return { files: toRestore.length, createdAt: manifest.createdAt ?? null };
   } finally {
