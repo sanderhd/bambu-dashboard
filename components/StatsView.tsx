@@ -83,7 +83,7 @@ export default function StatsView() {
           <Tile label="Success rate" value={sel.length ? `${Math.round((ok / sel.length) * 100)}%` : '–'} />
           <Tile label="Print time" value={`${hours.toFixed(1)} h`} />
           <Tile label="Filament" value={withGrams.length ? fmtGrams(grams) : '–'}
-            note={withGrams.length ? `from ${withGrams.length} of ${sel.length} prints` : 'Known for prints counted on a project part with grams set'} />
+            note={withGrams.length ? `from ${withGrams.length} of ${sel.length} prints` : 'Read from the sliced file on the printer'} />
           <Tile label="Energy" value={withEnergy.length ? `${kwh.toFixed(1)} kWh` : '–'}
             note={withEnergy.length ? `from ${withEnergy.length} of ${sel.length} prints` : <>Set up Home Assistant in <Link href="/settings">Settings</Link></>} />
           <Tile label="Total print hours" value={totalHours != null ? `${totalHours} h` : '–'} note="All time, incl. your starting value" />
@@ -101,8 +101,8 @@ export default function StatsView() {
             emptyText="No energy data yet. Connect your smart plug under Settings → Home Assistant." />
         </section>
         <section className="card s12">
-          <BarChart title="Filament (grams, where known)" buckets={gramsData} series={[{ name: 'Grams', color: 'var(--series-1)' }]} format={(v) => String(Math.round(v))}
-            emptyText="Filament is recorded for prints that count towards a project part with grams per piece." />
+          <BarChart title="Filament (grams)" buckets={gramsData} series={[{ name: 'Grams', color: 'var(--series-1)' }]} format={(v) => String(Math.round(v))}
+            emptyText="No filament data yet. It is read from the sliced file on the printer's SD card when a print starts (needs LAN mode)." />
         </section>
 
         <MaintenanceSection />

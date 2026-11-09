@@ -243,3 +243,16 @@ textarea:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transp
 
 .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
+
+/* print history */
+.history-filters { display: grid; grid-template-columns: minmax(200px, 2fr) repeat(3, minmax(140px, 1fr)); gap: 0 12px; }
+@media (max-width: 800px) { .history-filters { grid-template-columns: 1fr 1fr; } .history-filters .grow { grid-column: 1 / -1; } }
+.table-scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+.history-table td, .history-table th { text-align: left; vertical-align: top; }
+.history-table .name-cell { min-width: 180px; overflow-wrap: anywhere; font-weight: 550; }
+.history-table a { color: inherit; }
+.nowrap { white-space: nowrap; }
+.result { font-weight: 600; }
+.result.ok { color: var(--accent); }
+.result.bad { color: var(--bad); }
+.fil-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; border: 1px solid var(--line); vertical-align: -1px; }

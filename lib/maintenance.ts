@@ -34,6 +34,9 @@ const newId = () => crypto.randomBytes(5).toString('hex');
 const g = globalThis as unknown as { __bambuMaintenance?: { tasks: MaintenanceTask[] } };
 const store = (g.__bambuMaintenance ??= { tasks: load() });
 
+/** Re-reads the tasks from disk, e.g. after restoring a backup. */
+export function reloadMaintenance() { store.tasks = load(); }
+
 function load(): MaintenanceTask[] {
   try { return JSON.parse(fs.readFileSync(FILE, 'utf8')).tasks; } catch { /* first run */ }
   // First run: everything counts as "last done at 0 print hours, today". With your current

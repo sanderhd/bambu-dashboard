@@ -24,6 +24,12 @@ function load(): Settings {
 }
 
 export const settingsEvents = store.events;
+
+/** Re-reads settings.json, e.g. after restoring a backup. Listeners (cameras, Home Assistant) restart. */
+export function reloadSettings() {
+  store.data = load();
+  store.events.emit('change', store.data);
+}
 export const getSettings = (): Settings => store.data;
 
 /** Settings as sent to the browser: tokens and webhook URLs never leave the server. */

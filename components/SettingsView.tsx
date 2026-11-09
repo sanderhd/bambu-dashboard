@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Header from './Header';
+import { uploadFile } from '@/lib/client';
 import type { CameraConfig, Connection, NotifyEvent, PrinterInfo } from '@/lib/types';
 
 type SettingsResponse = {
@@ -42,6 +43,7 @@ export default function SettingsView() {
             <NotificationsSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
             <PasswordSection />
             <PrinterSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
+            <BackupSection />
           </>
         )}
       </main>
@@ -399,6 +401,54 @@ function PrinterSection({ data, onSaved }: { data: SettingsResponse; onSaved: (d
         These come from <code>.env</code> on the server. Change them there and restart the dashboard.
         {p.camera === 'jpeg' && <> For the printer camera, turn on <b>LAN Only Liveview</b> on the printer.</>}
       </p>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- backup
+function BackupSection() {
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const restore = async (file: File | undefined) => {
+    if (input.current) input.current.value = '';
+    if (!file) return;
+    if (!confirm_(`Restore "${file.name}"?
+
+This replaces all settings, print history, maintenance and projects (including model files) with the backup. Your password stays the same.`)) return;
+    setMsg(null);
+    setBusy('Uploading… 0%');
+    try {
+      const r = await uploadFile('/api/restore', file, (p) => setBusy(p < 1 ? `Uploading… ${Math.round(p * 100)}%` : 'Restoring…'));
+      const when = r.createdAt ? ` from ${new Date(r.createdAt).toLocaleString()}` : '';
+      setMsg({ ok: true, text: `Restored ${r.files} files${when}. Reloading…` });
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      setMsg({ ok: false, text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="card s6" id="backup">
+      <h2>Backup</h2>
+      <p className="muted small" style={{ marginTop: 0 }}>
+        One ZIP with your settings, print history, maintenance and projects, including uploaded model files and previews.
+        It also contains your Home Assistant token and notification webhooks, so keep it somewhere safe.
+        Your password is not included.
+      </p>
+      <div className="row">
+        <a className="btn primary" href="/api/backup" download style={{ textDecoration: 'none' }}>Download backup</a>
+        <button className="btn" disabled={!!busy} onClick={() => input.current?.click()}>Restore from backup…</button>
+        <input ref={input} type="file" accept=".zip,application/zip" hidden onChange={(e) => restore(e.target.files?.[0])} />
+      </div>
+      {(busy || msg) && (
+        <p className="small" role="status" style={{ marginBottom: 0 }}>
+          {busy ? <span className="muted">{busy}</span> : <span className={msg!.ok ? 'ok-msg' : 'bad-msg'}>{msg!.text}</span>}
+        </p>
+      )}
     </section>
   );
 }

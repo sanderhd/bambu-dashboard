@@ -6,7 +6,7 @@ import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
 import mqtt, { MqttClient } from 'mqtt';
-import type { CameraMode, Connection, Power, PrintState, PrintJob, PrinterInfo, TempSample, Snapshot } from './types';
+import type { CameraMode, Connection, JobFilament, Power, PrintState, PrintJob, PrinterInfo, TempSample, Snapshot } from './types';
 
 const ROOT = process.cwd();
 const CONFIG_PATH = path.join(ROOT, 'config.json');
@@ -72,18 +72,20 @@ class Printer extends EventEmitter {
   /** Set by lib/homeassistant.ts when a smart plug is configured. */
   power: Power | null = null;
   jobEnergyKwh: number | null = null;
+  /** Set by lib/filament.ts once the running print's file has been read. */
+  jobFilament: JobFilament | null = null;
   private client: MqttClient | null = null;
   private lastGcodeState?: string;
   private jobStartedAt: number | null = null;
   private jobSeconds = 0;
+  private lastPercent = 0;
   private usage = { printSeconds: 0 };
   private usageDirty = false;
 
   constructor() {
     super();
     this.setMaxListeners(100);
-    try { this.printHistory = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')); } catch { /* none yet */ }
-    try { this.usage = { ...this.usage, ...JSON.parse(fs.readFileSync(USAGE_PATH, 'utf8')) }; } catch { /* none yet */ }
+    this.loadData();
     setInterval(() => this.tick(), TICK * 1000);
     setInterval(() => this.saveUsage(), 60_000);
     if (this.demo) this.startDemo(); else this.startMqtt();
@@ -96,6 +98,17 @@ class Printer extends EventEmitter {
       power: this.power, jobEnergyKwh: this.jobEnergyKwh,
     };
   }
+
+  /** (Re)reads print history and usage from disk, e.g. after restoring a backup. */
+  loadData() {
+    try { this.printHistory = JSON.parse(fs.readFileSync(HISTORY_PATH, 'utf8')); } catch { this.printHistory = []; }
+    try { this.usage = { printSeconds: 0, ...JSON.parse(fs.readFileSync(USAGE_PATH, 'utf8')) }; } catch { this.usage = { printSeconds: 0 }; }
+    this.usageDirty = false;
+    this.emit('history', this.printHistory);
+  }
+
+  /** Identifies the running print (its start time), or null when idle. */
+  get jobId() { return this.jobStartedAt; }
 
   /** Hours spent printing since the dashboard started counting (add Settings → print hours for the total). */
   get countedPrintHours() { return this.usage.printSeconds / 3600; }
@@ -146,11 +159,14 @@ class Printer extends EventEmitter {
   private trackJobs() {
     const gs = this.state.gcode_state;
     const prev = this.lastGcodeState;
+    if (gs && !['FINISH', 'FAILED', 'IDLE'].includes(gs) && typeof this.state.mc_percent === 'number') this.lastPercent = this.state.mc_percent;
     if (gs === prev) return;
     if ((gs === 'RUNNING' || gs === 'PREPARE') && !this.jobStartedAt) {
       this.jobStartedAt = Date.now();
       this.jobSeconds = 0;
-      this.emit('jobStarted');
+      this.lastPercent = 0;
+      this.jobFilament = null;
+      this.emit('jobStarted', this.jobStartedAt);
     }
     const done = gs === 'FINISH' || gs === 'FAILED';
     const wasActive = prev && !['FINISH', 'FAILED', 'IDLE'].includes(prev);
@@ -163,15 +179,29 @@ class Printer extends EventEmitter {
         ended: Date.now(),
         printSeconds: this.jobSeconds,
       };
+      this.addFilament(job);
       // Listeners (project counting, energy) may annotate the job; async ones call saveHistory() later.
       this.emit('jobFinished', job);
       this.printHistory.unshift(job);
       this.printHistory = this.printHistory.slice(0, HISTORY_MAX);
       this.jobStartedAt = null;
+      this.jobFilament = null;
       this.saveHistory();
       this.saveUsage();
     }
     this.lastGcodeState = gs;
+  }
+
+  /** Grams from the sliced file; a failed print only counts the part it got through. */
+  private addFilament(job: PrintJob) {
+    const f = this.jobFilament;
+    if (!f) return;
+    const share = job.result === 'FINISH' ? 1 : Math.min(1, Math.max(0, this.lastPercent / 100));
+    const r = (n: number) => Math.round(n * share * 10) / 10;
+    job.grams = r(f.grams);
+    job.gramsSource = 'printer';
+    const filaments = f.filaments.filter((x) => x.grams).map((x) => ({ type: x.type, color: x.color, grams: r(x.grams!) }));
+    if (filaments.length) job.filaments = filaments;
   }
 
   // ------------------------------------------------------------ MQTT

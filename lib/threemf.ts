@@ -2,105 +2,69 @@
 // the whole file: only the central directory and the few entries we need are read from disk.
 import 'server-only';
 import fs from 'fs';
-import zlib from 'zlib';
+import { extract, listEntries } from './zip';
 import type { SliceInfo } from './types';
-
-type Entry = { name: string; method: number; compSize: number; size: number; offset: number };
-const MAX_ENTRY = 20 * 1024 * 1024; // never inflate more than this per entry
-
-function readAt(fd: number, pos: number, len: number) {
-  const buf = Buffer.alloc(len);
-  const n = fs.readSync(fd, buf, 0, len, pos);
-  return buf.subarray(0, n);
-}
-
-function listEntries(fd: number, fileSize: number): Entry[] {
-  // End-of-central-directory record: within the last 64 KB (+22 bytes).
-  const tailLen = Math.min(fileSize, 65_557);
-  const tail = readAt(fd, fileSize - tailLen, tailLen);
-  let eocd = -1;
-  for (let i = tail.length - 22; i >= 0; i--) if (tail.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
-  if (eocd < 0) throw new Error('Not a ZIP file');
-  let cdSize = tail.readUInt32LE(eocd + 12);
-  let cdOffset = tail.readUInt32LE(eocd + 16);
-
-  if (cdOffset === 0xffffffff || cdSize === 0xffffffff) {
-    // ZIP64: the locator sits right before the EOCD and points at the ZIP64 EOCD record.
-    const loc = eocd - 20;
-    if (loc < 0 || tail.readUInt32LE(loc) !== 0x07064b50) throw new Error('Broken ZIP64 archive');
-    const z64 = readAt(fd, Number(tail.readBigUInt64LE(loc + 8)), 56);
-    if (z64.readUInt32LE(0) !== 0x06064b50) throw new Error('Broken ZIP64 archive');
-    cdSize = Number(z64.readBigUInt64LE(40));
-    cdOffset = Number(z64.readBigUInt64LE(48));
-  }
-  if (cdSize > 16 * 1024 * 1024) throw new Error('ZIP directory too large');
-
-  const cd = readAt(fd, cdOffset, cdSize);
-  const entries: Entry[] = [];
-  for (let p = 0; p + 46 <= cd.length && cd.readUInt32LE(p) === 0x02014b50;) {
-    const nameLen = cd.readUInt16LE(p + 28), extraLen = cd.readUInt16LE(p + 30), commentLen = cd.readUInt16LE(p + 32);
-    const e: Entry = {
-      method: cd.readUInt16LE(p + 10),
-      compSize: cd.readUInt32LE(p + 20),
-      size: cd.readUInt32LE(p + 24),
-      offset: cd.readUInt32LE(p + 42),
-      name: cd.toString('utf8', p + 46, p + 46 + nameLen),
-    };
-    // ZIP64 extra field (0x0001) holds the real values for fields set to 0xffffffff, in this order.
-    for (let x = p + 46 + nameLen; x + 4 <= p + 46 + nameLen + extraLen;) {
-      const id = cd.readUInt16LE(x), len = cd.readUInt16LE(x + 2);
-      if (id === 0x0001) {
-        let q = x + 4;
-        if (e.size === 0xffffffff) { e.size = Number(cd.readBigUInt64LE(q)); q += 8; }
-        if (e.compSize === 0xffffffff) { e.compSize = Number(cd.readBigUInt64LE(q)); q += 8; }
-        if (e.offset === 0xffffffff) { e.offset = Number(cd.readBigUInt64LE(q)); }
-      }
-      x += 4 + len;
-    }
-    entries.push(e);
-    p += 46 + nameLen + extraLen + commentLen;
-  }
-  return entries;
-}
-
-function extract(fd: number, e: Entry): Buffer {
-  if (e.size > MAX_ENTRY || e.compSize > MAX_ENTRY) throw new Error(`${e.name} is too large`);
-  const local = readAt(fd, e.offset, 30);
-  if (local.readUInt32LE(0) !== 0x04034b50) throw new Error('Broken ZIP entry');
-  const start = e.offset + 30 + local.readUInt16LE(26) + local.readUInt16LE(28);
-  const data = readAt(fd, start, e.compSize);
-  if (e.method === 0) return data;
-  if (e.method === 8) return zlib.inflateRawSync(data, { maxOutputLength: MAX_ENTRY });
-  throw new Error(`Unsupported compression in ${e.name}`);
-}
 
 const attr = (tag: string, key: string) => tag.match(new RegExp(`\\b${key}="([^"]*)"`))?.[1];
 
-/** Parses Bambu Studio / OrcaSlicer's Metadata/slice_info.config. */
-function parseSliceInfo(xml: string): SliceInfo | null {
-  const plates = xml.match(/<plate>[\s\S]*?<\/plate>/g) ?? [];
-  if (!plates.length) return null;
-  let seconds = 0, grams = 0, haveTime = false, haveGrams = false;
-  const filaments: SliceInfo['filaments'] = [];
-  for (const plate of plates) {
+type Plate = { index: number | null; seconds: number | null; grams: number | null; filaments: SliceInfo['filaments'] };
+
+/** Parses Bambu Studio / OrcaSlicer's Metadata/slice_info.config: one entry per sliced plate. */
+function parsePlates(xml: string): Plate[] {
+  return (xml.match(/<plate>[\s\S]*?<\/plate>/g) ?? []).map((plate) => {
     const meta = (key: string) => {
       const tag = plate.match(new RegExp(`<metadata[^>]*key="${key}"[^>]*/?>`))?.[0];
       return tag ? attr(tag, 'value') : undefined;
     };
-    const t = Number(meta('prediction')), w = Number(meta('weight'));
-    if (Number.isFinite(t) && t > 0) { seconds += t; haveTime = true; }
-    if (Number.isFinite(w) && w > 0) { grams += w; haveGrams = true; }
-    for (const tag of plate.match(/<filament\b[^>]*\/?>/g) ?? []) {
+    const t = Number(meta('prediction')), w = Number(meta('weight')), i = Number(meta('index'));
+    const filaments = (plate.match(/<filament\b[^>]*\/?>/g) ?? []).map((tag) => {
       const g = Number(attr(tag, 'used_g'));
-      filaments.push({ type: attr(tag, 'type') ?? '', color: attr(tag, 'color') ?? '', grams: Number.isFinite(g) ? g : null });
-    }
-  }
+      return { type: attr(tag, 'type') ?? '', color: attr(tag, 'color') ?? '', grams: Number.isFinite(g) ? g : null };
+    });
+    return {
+      index: Number.isInteger(i) && i > 0 ? i : null,
+      seconds: Number.isFinite(t) && t > 0 ? t : null,
+      grams: Number.isFinite(w) && w > 0 ? w : null,
+      filaments,
+    };
+  });
+}
+
+function parseSliceInfo(xml: string): SliceInfo | null {
+  const plates = parsePlates(xml);
+  if (!plates.length) return null;
+  const timed = plates.filter((p) => p.seconds != null), weighed = plates.filter((p) => p.grams != null);
   return {
     plates: plates.length,
-    minutes: haveTime ? Math.round(seconds / 60) : null,
-    grams: haveGrams ? Math.round(grams * 10) / 10 : null,
-    filaments,
+    minutes: timed.length ? Math.round(timed.reduce((n, p) => n + p.seconds!, 0) / 60) : null,
+    grams: weighed.length ? Math.round(weighed.reduce((n, p) => n + p.grams!, 0) * 10) / 10 : null,
+    filaments: plates.flatMap((p) => p.filaments),
   };
+}
+
+/**
+ * Filament use of one plate of a sliced .3mf, as the slicer predicted it. `plate` is the plate
+ * being printed (1-based); unknown or missing falls back to the first plate, like Bambu Studio.
+ */
+export function plateUsage(file: string, plate: number | null): { plate: number | null; grams: number; filaments: SliceInfo['filaments'] } | null {
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(file, 'r');
+    const entry = listEntries(fd, fs.fstatSync(fd).size).find((e) => e.name.replace(/^\//, '').toLowerCase() === 'metadata/slice_info.config');
+    if (!entry) return null;
+    const plates = parsePlates(extract(fd, entry).toString('utf8'));
+    const p = (plate != null && plates.find((x) => x.index === plate)) || plates[0];
+    if (!p) return null;
+    const fromFilaments = p.filaments.reduce((n, f) => n + (f.grams ?? 0), 0);
+    const grams = p.grams ?? (fromFilaments > 0 ? fromFilaments : null);
+    if (grams == null) return null;
+    return { plate: p.index, grams: Math.round(grams * 10) / 10, filaments: p.filaments.filter((f) => f.grams) };
+  } catch (e) {
+    console.warn('[3mf]', (e as Error).message);
+    return null;
+  } finally {
+    if (fd !== null) fs.closeSync(fd);
+  }
 }
 
 /** Preview PNG and (for sliced files) slicing info. Never throws: a broken file just has neither. */

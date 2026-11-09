@@ -28,6 +28,9 @@ type Store = { projects: Project[] };
 const g = globalThis as unknown as { __bambuProjects?: Store; __bambuProjectsHooked?: boolean };
 const store = (g.__bambuProjects ??= { projects: load() });
 
+/** Re-reads the projects from disk, e.g. after restoring a backup. */
+export function reloadProjects() { store.projects = load(); }
+
 function load(): Project[] {
   try { return JSON.parse(fs.readFileSync(INDEX, 'utf8')).projects ?? []; } catch { return []; }
 }
@@ -308,7 +311,11 @@ function countJob(job: PrintJob) {
     log(project, `${part.name}: print "${job.name}" failed (+${pieces} failed)`);
   }
   job.counted = { projectId: project.id, projectName: project.name, partId: part.id, partName: part.name, pieces };
-  if (part.gramsPerPiece != null) job.grams = Math.round(part.gramsPerPiece * pieces * 10) / 10;
+  // The printer's own file is more precise; the part's grams are the fallback.
+  if (part.gramsPerPiece != null && job.grams == null) {
+    job.grams = Math.round(part.gramsPerPiece * pieces * 10) / 10;
+    job.gramsSource = 'project';
+  }
   save();
 }
 

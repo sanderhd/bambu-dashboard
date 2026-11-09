@@ -75,13 +75,19 @@ export function SystemCard({ s, model }: { s: PrintState; model?: string }) {
   );
 }
 
+const RECENT = 10;
+
 export function HistoryCard({ jobs }: { jobs: PrintJob[] }) {
   return (
     <section className="card s12">
-      <h2>Print history</h2>
+      <div className="row" style={{ marginBottom: 14 }}>
+        <h2 style={{ margin: 0 }}>Recent prints</h2>
+        <span className="spacer" />
+        {jobs.length > 0 && <Link className="muted small" href="/history">All {jobs.length} prints, search and export →</Link>}
+      </div>
       <ul className="list">
         {!jobs.length && <li className="muted">No prints recorded since the dashboard started.</li>}
-        {jobs.map((h) => {
+        {jobs.slice(0, RECENT).map((h) => {
           const ok = h.result === 'FINISH';
           const dur = h.started ? fmtDur((h.ended - h.started) / 60000) : '';
           return (

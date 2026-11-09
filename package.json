@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "basic-ftp": "6.2.3",
     "mqtt": "^5.16.1",
     "next": "^16.4.5",
     "react": "^19.3.1",

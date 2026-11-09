@@ -22,7 +22,9 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
 - Notifications via Pushbullet and/or a Discord webhook, with a camera image
 - Installable as an app on your phone (PWA) when served over HTTPS
 - Password login (set on first visit) and a Settings page
-- Print history, saved to `data/print-history.json`
+- Print history with search, filters and CSV export, saved to `data/print-history.json`
+- Filament per print, read automatically from the sliced file on the printer
+- Backup and restore of all data as one ZIP
 - All raw printer data
 - Controls: pause, resume, stop, light on/off and print speed
 
@@ -70,10 +72,28 @@ unless you set them yourself. STL files get a preview rendered once by your brow
 The **Stats** page shows prints (succeeded/failed), print time, filament and energy per day, week or
 month, with a table view under every chart. It only knows prints finished while the dashboard ran.
 
+**Filament** is read from the printer itself: when a print starts, the dashboard downloads the sliced
+`.gcode.3mf` from the printer's SD card over FTPS (port 990, same access code, needs LAN mode), reads the
+slicer's prediction for the plate being printed and deletes the file again. A failed print counts the
+share it got through (failed at 40% = 40% of the grams). If the file can't be found (for example a print
+started from the cloud), the grams per piece of a matching project part are used instead.
+
+**History** (`/history`) lists every recorded print with search, filters for result, project and date,
+and a CSV export of what you filtered. The CSV uses `;` and decimal commas when your browser's locale
+writes numbers that way (e.g. Dutch), so it opens in Excel in columns straight away.
+
 Maintenance reminders count **print hours** (time actually printing, pauses excluded) and/or days.
 The A1 doesn't report its lifetime print time, so enter the hours it already had under
 **Settings → Printer**. A starter list of A1 jobs is included; the intervals are suggestions, so adjust
 them to how you print. Tasks that are due show on the dashboard with a *Mark done* button.
+
+## Backup and restore
+Under **Settings → Backup**, *Download backup* saves one ZIP with settings, print history, maintenance and
+projects, including model files and previews. It also contains your Home Assistant token and notification
+webhooks, so store it safely. The password is not included; it stays whatever it is on the dashboard you
+restore to. *Restore from backup* replaces all of that data with the backup. The upload is checked
+(every file's checksum) before anything is replaced, and the dashboard picks up the restored data without
+a restart.
 
 ## Home Assistant (smart plug)
 Under **Settings → Home Assistant** enter your Home Assistant URL, a long-lived access token
@@ -189,6 +209,9 @@ lib/auth.ts              password hashing and signed session cookies
 lib/settings.ts          settings stored in data/settings.json
 lib/projects.ts          projects, parts, file storage and automatic counting
 lib/threemf.ts           reads previews and slicing info from 3MF files
+lib/zip.ts               streaming ZIP reader/writer (3MF files, backups)
+lib/filament.ts          fetches the running print's file over FTPS for its filament use
+lib/backup.ts            backup and restore of data/
 lib/maintenance.ts       maintenance tasks and print hours
 lib/homeassistant.ts     smart plug power and energy via Home Assistant
 lib/types.ts, format.ts  shared types and labels

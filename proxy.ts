@@ -1,9 +1,10 @@
 // Runs before every request (Next.js 16 "proxy", formerly middleware; Node.js runtime).
 // Everything requires a login except the login page and the login/setup endpoints.
 //
-// /api/upload/* is excluded from the matcher on purpose: when a proxy runs, Next.js buffers the
-// request body in memory (and cuts it off at 10 MB), which breaks large model uploads. That route
-// does the same login and origin checks itself and streams the file straight to disk.
+// /api/upload/* and /api/restore are excluded from the matcher on purpose: when a proxy runs, Next.js
+// buffers the request body in memory (and cuts it off at 10 MB), which breaks large model uploads and
+// backup restores. Those routes do the same login and origin checks themselves and stream the body
+// straight to disk.
 import { NextResponse, type NextRequest } from 'next/server';
 import { isSameOrigin, SESSION_COOKIE, verifySessionToken } from './lib/auth';
 
@@ -32,5 +33,5 @@ export function proxy(req: NextRequest) {
 // Also public: app icons, the web app manifest, the service worker and its offline page
 // (browsers fetch the manifest without cookies, so it can't sit behind the login).
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|manifest.webmanifest|sw.js|offline.html|api/upload/).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|icon|apple-icon|icons/|manifest.webmanifest|sw.js|offline.html|api/upload/|api/restore).*)'],
 };

@@ -104,9 +104,15 @@ export type PrintJob = {
   printSeconds?: number;
   /** Energy used, from the Home Assistant energy sensor (start → end of the print). */
   energyKwh?: number;
-  /** Filament used, when known (from the counted part's grams per piece). */
+  /** Filament used, when known: read from the sliced file on the printer, or the counted part's grams per piece. */
   grams?: number;
+  gramsSource?: 'printer' | 'project';
+  /** Per filament (type, #RRGGBB colour), when read from the printer. */
+  filaments?: { type: string; color: string; grams: number }[];
 };
+
+/** The slicer's filament prediction for the print that is running, read from the printer's SD card. */
+export type JobFilament = { file: string; plate: number | null; grams: number; filaments: SliceInfo['filaments'] };
 
 export type Power = { watts: number | null; at: number; error: string | null };
 
