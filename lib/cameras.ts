@@ -297,6 +297,27 @@ class CameraHub {
     if (src) this.sources.set(id, src);
     return src;
   }
+
+  /** One current JPEG from a camera (starting it briefly if nobody is watching), or null. */
+  snapshot(id: string, timeoutMs = 15_000): Promise<Buffer | null> {
+    const src = this.get(id);
+    if (!src || src.unavailableReason()) return Promise.resolve(null);
+    if (src.lastFrame && Date.now() - src.lastFrameAt < 3000) return Promise.resolve(src.lastFrame);
+    return new Promise((resolve) => {
+      let unwatch: (() => void) | null = null;
+      let settled = false;
+      const done = (jpg: Buffer | null) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        unwatch?.();
+        resolve(jpg);
+      };
+      const timer = setTimeout(() => done(null), timeoutMs);
+      unwatch = src.watch((jpg) => done(jpg), () => done(null));
+      if (settled) unwatch(); // failed straight away, inside watch()
+    });
+  }
 }
 
 const g = globalThis as unknown as { __bambuCameras?: CameraHub };

@@ -1,12 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Header from './Header';
-import type { CameraConfig, Connection, PrinterInfo } from '@/lib/types';
+import type { CameraConfig, Connection, NotifyEvent, PrinterInfo } from '@/lib/types';
 
 type SettingsResponse = {
   cameras: CameraConfig[];
   defaultCamera?: string;
   ha: { url: string; powerEntity: string; energyEntity: string; tokenSet: boolean } | null;
+  notify: { events: NotifyEvent[]; snapshot: boolean; camera: string; pushbulletSet: boolean; discordSet: boolean };
   printHoursOffset?: number;
   totalPrintHours: number;
   countedPrintHours: number;
@@ -38,6 +39,7 @@ export default function SettingsView() {
           <>
             <CamerasSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
             <HomeAssistantSection ha={data.ha} onSaved={(d) => setData({ ...data, ...d })} />
+            <NotificationsSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
             <PasswordSection />
             <PrinterSection data={data} onSaved={(d) => setData({ ...data, ...d })} />
           </>
@@ -241,6 +243,110 @@ function HomeAssistantSection({ ha, onSaved }: { ha: SettingsResponse['ha']; onS
           <button type="button" className="btn" onClick={test} disabled={!url}>Test</button>
           <span className="spacer" />
           {ha && <button type="button" className="btn danger" onClick={disconnect}>Disconnect</button>}
+        </div>
+        {msg && <p className={msg.ok ? 'ok-msg' : 'bad-msg'}>{msg.text}</p>}
+      </form>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- notifications
+const EVENTS: [NotifyEvent, string][] = [
+  ['finished', 'Print finished'],
+  ['failed', 'Print failed or stopped'],
+  ['paused', 'Print paused (e.g. filament runout)'],
+  ['hms', 'New printer alert (HMS)'],
+  ['maintenance', 'Maintenance due'],
+  ['started', 'Print started'],
+];
+
+function NotificationsSection({ data, onSaved }: { data: SettingsResponse; onSaved: (d: Partial<SettingsResponse>) => void }) {
+  const n = data.notify;
+  const [pushbullet, setPushbullet] = useState('');
+  const [discord, setDiscord] = useState('');
+  const [events, setEvents] = useState<NotifyEvent[]>(n.events);
+  const [snapshot, setSnapshot] = useState(n.snapshot);
+  const [camera, setCamera] = useState(n.camera);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [tests, setTests] = useState<{ service: string; ok: boolean; message: string }[] | 'busy' | null>(null);
+  const cameras = [
+    ...(data.printer.camera !== 'off' ? [{ id: 'printer', name: 'Printer camera' }] : []),
+    ...data.cameras.filter((c) => c.id).map((c) => ({ id: c.id, name: c.name })),
+  ];
+
+  const toggle = (e: NotifyEvent) => setEvents(events.includes(e) ? events.filter((x) => x !== e) : [...events, e]);
+  const test = async () => {
+    setTests('busy');
+    const r = await api('/api/settings/test-notify', 'POST', { pushbullet, discord, snapshot, camera })
+      .catch(() => ({ results: [{ service: 'Server', ok: false, message: 'unreachable' }] }));
+    setTests(r.results ?? []);
+  };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const r = await api('/api/settings', 'PUT', { notify: { pushbullet, discord, events, snapshot, camera } });
+    if (!r.ok) return setMsg({ ok: false, text: r.error });
+    setPushbullet('');
+    setDiscord('');
+    onSaved({ notify: r.notify });
+    setMsg({ ok: true, text: r.notify.pushbulletSet || r.notify.discordSet ? 'Saved. Notifications are on.' : 'Saved. Add Pushbullet or Discord to receive notifications.' });
+  };
+  const remove = async (service: 'pushbullet' | 'discord') => {
+    if (!confirm(`Stop sending notifications to ${service === 'pushbullet' ? 'Pushbullet' : 'Discord'}?`)) return;
+    const r = await api('/api/settings', 'PUT', { notify: { [service]: null } });
+    if (r.ok) { onSaved({ notify: r.notify }); setMsg({ ok: true, text: 'Removed.' }); }
+  };
+
+  return (
+    <section className="card s6">
+      <h2>Notifications</h2>
+      <p className="muted small">
+        Get a message on your phone or in a Discord channel. Fill in one or both; they work even when no browser is open.
+      </p>
+      <form onSubmit={save}>
+        <label className="field"><span>Pushbullet access token {n.pushbulletSet && '(saved, leave empty to keep it)'}</span>
+          <input type="password" autoComplete="off" className="mono" value={pushbullet} onChange={(e) => setPushbullet(e.target.value)}
+            placeholder={n.pushbulletSet ? '••••••••' : 'o.xxxxxxxxxxxxxxxx'} /></label>
+        <p className="muted small" style={{ marginTop: -6 }}>
+          Create one at pushbullet.com under <b>Settings → Account → Create Access Token</b>.
+        </p>
+        <label className="field"><span>Discord webhook URL {n.discordSet && '(saved, leave empty to keep it)'}</span>
+          <input type="password" autoComplete="off" className="mono" value={discord} onChange={(e) => setDiscord(e.target.value)}
+            placeholder={n.discordSet ? '••••••••' : 'https://discord.com/api/webhooks/…'} /></label>
+        <p className="muted small" style={{ marginTop: -6 }}>
+          In Discord: <b>channel settings → Integrations → Webhooks → New Webhook → Copy Webhook URL</b>.
+        </p>
+
+        <div className="label">Send a notification when</div>
+        {EVENTS.map(([e, label]) => (
+          <label key={e} className="toggle" style={{ marginBottom: 8 }}>
+            <input type="checkbox" checked={events.includes(e)} onChange={() => toggle(e)} /> {label}
+          </label>
+        ))}
+
+        <div className="label">Camera image</div>
+        <label className="toggle" style={{ marginBottom: 8 }}>
+          <input type="checkbox" checked={snapshot} onChange={(e) => setSnapshot(e.target.checked)} /> Attach a camera image to print notifications
+        </label>
+        {snapshot && cameras.length > 1 && (
+          <label className="field"><span>Camera</span>
+            <select value={camera} onChange={(e) => setCamera(e.target.value)}>
+              <option value="">Default camera</option>
+              {cameras.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select></label>
+        )}
+
+        {tests === 'busy' && <p className="muted">Sending…</p>}
+        {Array.isArray(tests) && (
+          <ul className="test-results">
+            {tests.map((t) => <li key={t.service} className={t.ok ? 'ok-msg' : 'bad-msg'}>{t.ok ? '✓' : '✗'} {t.service}: {t.message}</li>)}
+          </ul>
+        )}
+        <div className="row">
+          <button className="btn primary">Save</button>
+          <button type="button" className="btn" onClick={test} disabled={tests === 'busy' || (!pushbullet && !discord && !n.pushbulletSet && !n.discordSet)}>Send test</button>
+          <span className="spacer" />
+          {n.pushbulletSet && <button type="button" className="btn danger" onClick={() => remove('pushbullet')}>Remove Pushbullet</button>}
+          {n.discordSet && <button type="button" className="btn danger" onClick={() => remove('discord')}>Remove Discord</button>}
         </div>
         {msg && <p className={msg.ok ? 'ok-msg' : 'bad-msg'}>{msg.text}</p>}
       </form>

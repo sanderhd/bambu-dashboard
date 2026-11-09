@@ -73,6 +73,21 @@ export type Settings = {
   ha?: HaSettings;
   /** Print hours the printer had before this dashboard started counting. */
   printHoursOffset?: number;
+  notify?: NotifySettings;
+};
+
+export type NotifyEvent = 'started' | 'finished' | 'failed' | 'paused' | 'hms' | 'maintenance';
+
+export type NotifySettings = {
+  /** Pushbullet access token (Account settings → Access tokens). */
+  pushbullet?: string;
+  /** Discord channel webhook URL (Channel → Integrations → Webhooks). */
+  discord?: string;
+  events: NotifyEvent[];
+  /** Attach a camera image to print notifications. */
+  snapshot: boolean;
+  /** Camera for the image; defaults to the dashboard's default camera. */
+  camera?: string;
 };
 
 export type TempSample = { t: number; nozzle: number; nozzleTarget: number; bed: number; bedTarget: number };

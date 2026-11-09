@@ -19,6 +19,7 @@ the same LAN protocol will usually work too; they show up as "Bambu Lab printer"
 - Stats: prints, success rate, print time, filament and energy per day/week/month
 - Maintenance reminders by print hours or days, with an adjustable A1 starter list
 - Power and energy per print from a smart plug in Home Assistant
+- Notifications via Pushbullet and/or a Discord webhook, with a camera image
 - Installable as an app on your phone (PWA) when served over HTTPS
 - Password login (set on first visit) and a Settings page
 - Print history, saved to `data/print-history.json`
@@ -78,6 +79,15 @@ them to how you print. Tasks that are due show on the dashboard with a *Mark don
 Under **Settings → Home Assistant** enter your Home Assistant URL, a long-lived access token
 (profile → Security) and the plug's power (W) and energy (kWh) sensors. The dashboard then shows live
 power and records the energy each print used. The token is stored on the server only.
+
+## Notifications
+Under **Settings → Notifications** add a **Pushbullet access token** (pushbullet.com → Settings →
+Account → Create Access Token) and/or a **Discord webhook URL** (channel settings → Integrations →
+Webhooks). Choose what to be told about: print finished, failed or stopped, paused (with the reason,
+e.g. filament runout), new HMS alerts, maintenance due and, optionally, print started. Print
+notifications can include a camera image. **Send test** checks everything before you save.
+Notifications are sent by the server, so they also arrive when no browser is open. The token and
+webhook URL are stored on the server only.
 
 ## Using it over HTTPS / as an app
 Put the dashboard behind a reverse proxy with HTTPS, such as Nginx Proxy Manager, and open it there.

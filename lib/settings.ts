@@ -1,11 +1,11 @@
 // User settings stored in data/settings.json (survives Docker rebuilds via the data volume).
-// Contains the Home Assistant token, so the file is only readable by the app (mode 600).
+// Contains the Home Assistant token and notification secrets, so the file is only readable by the app (mode 600).
 import 'server-only';
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { CameraConfig, HaSettings, Settings } from './types';
+import type { CameraConfig, HaSettings, NotifyEvent, NotifySettings, Settings } from './types';
 
 const FILE = path.join(process.cwd(), 'data', 'settings.json');
 const DEFAULTS: Settings = { cameras: [] };
@@ -26,10 +26,20 @@ function load(): Settings {
 export const settingsEvents = store.events;
 export const getSettings = (): Settings => store.data;
 
-/** Settings as sent to the browser: the Home Assistant token never leaves the server. */
+/** Settings as sent to the browser: tokens and webhook URLs never leave the server. */
 export function publicSettings() {
-  const { ha, ...rest } = store.data;
-  return { ...rest, ha: ha ? { url: ha.url, powerEntity: ha.powerEntity, energyEntity: ha.energyEntity, tokenSet: !!ha.token } : null };
+  const { ha, notify, ...rest } = store.data;
+  return {
+    ...rest,
+    ha: ha ? { url: ha.url, powerEntity: ha.powerEntity, energyEntity: ha.energyEntity, tokenSet: !!ha.token } : null,
+    notify: {
+      events: notify?.events ?? DEFAULT_EVENTS,
+      snapshot: notify?.snapshot ?? true,
+      camera: notify?.camera ?? '',
+      pushbulletSet: !!notify?.pushbullet,
+      discordSet: !!notify?.discord,
+    },
+  };
 }
 
 /** Validates and normalises a camera list coming from the browser. Throws on bad input. */
@@ -67,6 +77,41 @@ export function validateHa(input: unknown): HaSettings | undefined {
   if (!token) throw new Error('Enter a long-lived access token');
   if (token.length > 1000) throw new Error('Token is too long');
   return { url, token, powerEntity, energyEntity };
+}
+
+export const NOTIFY_EVENTS: NotifyEvent[] = ['started', 'finished', 'failed', 'paused', 'hms', 'maintenance'];
+export const DEFAULT_EVENTS: NotifyEvent[] = ['finished', 'failed', 'paused', 'hms', 'maintenance'];
+export const DISCORD_WEBHOOK = /^https:\/\/(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+$/;
+export const PUSHBULLET_TOKEN = /^[\w.-]{10,200}$/;
+
+/**
+ * A secret from the browser: '' or missing keeps the saved value, null removes it.
+ * Throws when a new value doesn't match `pattern`.
+ */
+function secret(input: unknown, saved: string | undefined, pattern: RegExp, message: string) {
+  if (input === null) return undefined;
+  const v = String(input ?? '').trim();
+  if (!v) return saved;
+  if (!pattern.test(v)) throw new Error(message);
+  return v;
+}
+
+/** Notification settings from the browser. Missing keys keep their saved value. */
+export function validateNotify(input: unknown): NotifySettings {
+  const i = (input ?? {}) as Record<string, unknown>;
+  const saved = store.data.notify;
+  const events = Array.isArray(i.events)
+    ? NOTIFY_EVENTS.filter((e) => (i.events as unknown[]).includes(e))
+    : saved?.events ?? DEFAULT_EVENTS;
+  const camera = 'camera' in i ? String(i.camera ?? '').trim() || undefined : saved?.camera;
+  if (camera && !/^[a-z0-9-]{1,40}$/.test(camera)) throw new Error('Unknown camera');
+  return {
+    pushbullet: secret(i.pushbullet, saved?.pushbullet, PUSHBULLET_TOKEN, 'That doesn\'t look like a Pushbullet access token'),
+    discord: secret(i.discord, saved?.discord, DISCORD_WEBHOOK, 'Discord webhook URL must look like https://discord.com/api/webhooks/…'),
+    events,
+    snapshot: 'snapshot' in i ? !!i.snapshot : saved?.snapshot ?? true,
+    camera,
+  };
 }
 
 export function validatePrintHours(input: unknown): number {

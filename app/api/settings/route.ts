@@ -1,7 +1,7 @@
 import { requireSession } from '@/lib/auth';
 import { totalPrintHours } from '@/lib/maintenance';
 import { getPrinter } from '@/lib/printer';
-import { publicSettings, saveSettings, validateCameras, validateHa, validatePrintHours } from '@/lib/settings';
+import { publicSettings, saveSettings, validateCameras, validateHa, validateNotify, validatePrintHours } from '@/lib/settings';
 import type { Settings } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +42,7 @@ export async function PUT(req: Request) {
       patch.defaultCamera = typeof body.defaultCamera === 'string' && ids.has(body.defaultCamera) ? body.defaultCamera : undefined;
     }
     if ('ha' in body) patch.ha = validateHa(body.ha);
+    if ('notify' in body) patch.notify = validateNotify(body.notify);
     if ('printHoursOffset' in body) patch.printHoursOffset = validatePrintHours(body.printHoursOffset);
     saveSettings(patch);
     return Response.json({ ok: true, ...response() });
